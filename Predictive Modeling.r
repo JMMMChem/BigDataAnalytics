@@ -1,6 +1,6 @@
 ###Francesco Mora 100439601
-###Ignacio Soria Ramírez 100443660
-###José María Martínez Marín 100443343
+###Ignacio Soria RamÃ­rez 100443660
+###JosÃ© MarÃ­a MartÃ­nez MarÃ­n 100443343
 
 ######PREDICTIVE MODELING
 
@@ -62,7 +62,7 @@ exp(pois1$coefficients)
 
 xaxis <- seq(-2, 30, l = 100)
 z <- pois1$coefficients[1] + pois1$coefficients[2]*xaxis
-plot(tot_inc ~ temp, data=challenger, xlab="Temperature [°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
+plot(tot_inc ~ temp, data=challenger, xlab="Temperature [Â°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
 lines(xaxis, exp(z), col = color_2)
 legend(-3,2,legend="Poisson linear",col=color_2, lty=1, cex=0.9)
 
