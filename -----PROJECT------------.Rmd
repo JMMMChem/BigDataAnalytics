@@ -1,0 +1,1331 @@
+---
+title: "Statistical Learning - Assignment 1"
+output: html_document
+---
+
+# 1. Introduction  
+The selected dataset is a collection of linkedin profiles.  
+For each LinkedIn profile, information about the profile photo and the professional experience are collected.  
+It was chosen to check whether there are interesting insights coming from the physical aspect of the worker and his working profile.  
+The dataset is given in a csv file consisting of 15000 observations and 47 variables. A brief summary of all variables and their data types is presented below:  
+- variables related to generic attributes (age, gender, profile_id, glass)  
+- variables related to the beauty (beauty, beauty_female, beauty_male, )  
+- variables related to the image quality (blur, face_quality, head_pitch, head_roll, head_yaw)  
+- variables related to the emotion of the photo (emo_anger, emo_disgust, emo_fear, emo_happiness, emo_neutral, emo_sadness, emo_surprise)  
+- variables related to the mouth (mouth_close, mouth_mask, mouth_open, mouth_other, smile)  
+- variables related to the skin (skin_acne, skin_dark_circle, skin_health, skin_stain)  
+- variables related to the ethnicity (african, celtic_english, east_asian, european, greek, hispanic, jewish, nordic, south_asian, nationality, ethnicity)  
+- variables related to the job experience and profile (n_followers, n_employers, n_positions, experience, )  
+
+Most of the attributes have values that are coming from some kind of image recognition algorithm.
+As a consequence, all of the values that are related to the physical aspect, to the ethnicity or to the quality of the photo are ranked from 0 to 100, and this score should come from an AI program.  
+The dataset contains also attributes with categorical values (i.e. nationality, ethnicity, gender, glass) and others with numerical values that are not between 0 and 100 (i.e. age, n_followers, n_employers, n_positions, experience).  
+It is expected that the categorical variable ethnicity is highly correlated with the attributes describing the ethnicity with a score from the photo (these values were taken from the photos of the candidates). Thus, these variables are chosen to be removed to reduce the redundancy and the dimensionality of the problem.  
+
+### 1.1 Setup
+```{r}
+rm(list = ls()); 
+gc();
+
+#install.packages("sjmisc")
+#install.packages("rrcov")
+#install.packages("mice")
+#install.packages("plotrix")
+library(sjmisc)
+library(tidyverse)
+library(rrcov)
+library(mice)
+library(corrplot)
+library(factoextra)
+library(plotrix)
+library(ica)
+
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+color_4 <- "darkorchid4"
+color_5 <- "aquamarine"
+color_6 <- "darkslategrey"
+color_7 <- "chocolate3"
+color_8 <- "deeppink"
+color_9 <- "darkgoldenrod"
+color_10 <- "black"
+colors_mix <- c(color_1,color_2,color_3,color_4,color_5,color_6,color_7,color_8,color_9,color_10)
+
+```
+
+### 1.2 Load the dataset
+
+The dataset is loaded to the R workspace.
+
+```{r}
+Original <- read.csv(file="profiles.csv", sep=";", dec=",", encoding="UTF-8")
+profiles <- Original
+attach(profiles)
+```
+
+### 1.3 Creation of the dataset with only the numeric variables
+
+A copy of the dataset with only the numeric variables is created. This will be useful for the analysis that will be performed.
+
+```{r}
+profiles_quan <- profiles[,1:39]
+profiles_quan <- profiles_quan[,-(14:16)]
+profiles_quan <- profiles_quan[,-(23:32)]
+profiles_quan <- mutate_all(profiles_quan, function(x) as.numeric(as.character(x)))
+```
+
+# 2. Visual Analysis  
+### 2.1 Categorical variables  
+
+There are 4 categorical attributes: nationality, ethnicity, gender and glass (if the worker wears glasses or not).
+For each of them the barplots are given:
+
+```{r}
+par(mfrow=c(2,2))
+barplot(table(profiles$nationality)/nrow(profiles), main="Barplot of the nationality", ylab="Frequency", las=2)
+barplot(table(profiles$ethnicity)/nrow(profiles), main="Barplot of the ethnicity", xlab="Ethnicity", ylab="Frequency")
+barplot(table(profiles$gender)/nrow(profiles), main="Barplot of the gender", xlab="Gender", ylab="Frequency")
+barplot(table(profiles$glass)/nrow(profiles), main="Barplot of the glass", xlab="Glass", ylab="Frequency")
+```
+
+As this study contained mainly profiles from Australia, the main “nationality” found was “celtic_english” accounting for nearly the 40% of the entries.  
+The most represented ethnicity in the dataset is the white (around 70%), followed by asian and black.  
+About the gender, the males are the majority.  
+Finally, most of the workers don't wear glasses, as expected. A very small minority is wearing sunglasses.
+
+
+### 2.2 Numerical variables  
+
+The numerical variables are the vast majority of the dataset. For each of them the scatterplot, boxplot and kernel plot were computed, however only some examples are shown below to simplify the analysis.
+
+
+### 2.2 Boxplots and kernel plots
+
+For each numerical variable, the boxplot and kernel density plot are shown, both considering the whole data and dividing for gender, which was considered the most interesting categorical variable.
+
+3 different types of distributions were found:  
+ - Symmetric distributions: Age, beauty, beauty_female, beauty_male, head_pitch, head_yaw, head_roll, n_positions, experience, n_employers  
+ - Bimodal Distributions: emo_happiness, emo_neutral, face_quality, mouth_close, mouth_open, smile, celtic_english.  
+ These distributions have two high peaks around 0 and 1, while in the values in the middle have frequency close to 0. Therefore, these variables could be  transformed into binary variables.  
+ - Highly Skewed Distributions: Blur, blur_gaussian, emo_anger, emo_disgust, emo_sadness, emo_surprise, mouth_other, mouth_mask, east_asian, european, greek, muslim  
+
+
+A plot for each type of the three distributions described above is plotted:
+
+
+```{r, fig.width=20, fig.height=20}
+
+names <- names(profiles_quan[c(1,5,9)])
+
+i <- 1
+par(mfrow=c(2,2))
+
+for (name in names) {
+  x <- profiles_quan[,name]
+  x_male <- profiles_quan[,name][profiles$gender=="Male"]
+  x_female <- profiles_quan[,name][profiles$gender=="Female"]
+  
+  par(mfrow=c(2,2))
+
+  boxplot(x,main=paste("BOXPLOT OF",name),xlab=name,ylab="PROFILES",col=color_1,horizontal=TRUE)
+  boxplot(x~profiles$gender,main=paste("BOXPLOT OF", name,"IN TERMS OF GENDER"),ylab="GENDER",xlab=name,col=c(color_3,color_2),horizontal=TRUE)
+  plot(density(x,kernel="gaussian"),ylab="DENSITY",main=paste("KERNEL DENSITY OF", name), xlab=name, col=color_1,lwd=2)
+  d_male <- density(x_male,kernel="gaussian")
+  min_x_d_Yes <- min(d_male$x)
+  max_x_d_Yes <- max(d_male$x)
+  min_y_d_Yes <- min(d_male$y)
+  max_y_d_Yes <- max(d_male$y)
+  d_female <- density(x_female,kernel="gaussian")
+  min_x_d_No <- min(d_female$x)
+  max_x_d_No <- max(d_female$x)
+  min_y_d_No <- min(d_female$y)
+  max_y_d_No <- max(d_female$y)
+  min_x <- min(c(min_x_d_Yes,min_x_d_No))
+  max_x <- max(c(max_x_d_Yes,max_x_d_No))
+  min_y <- min(c(min_y_d_Yes,min_y_d_No))
+  max_y <- max(c(max_y_d_Yes,max_y_d_No))
+  plot(c(min_x,max_x),c(min_y,max_y),xlab=name,ylab="DENSITY",main=paste("KERNEL DENSITY OF",name,"IN TERMS OF GENDER"),type="n")
+  lines(d_male$x,d_male$y,col=color_2,lwd=2)
+  lines(d_female$x,d_female$y,col=color_3,lwd=2)
+  mtext(paste0("VARIABLE_",i,"_",name), side = 3, line = -1, outer = TRUE, font = 2)
+  
+  i <- i+1
+}
+
+
+```
+
+In particular, we can focus on the most interesting variables:  
+- age: The distribution of age is symmetric and centered around 40 years and there do not seem to be significant differences in age in terms of gender  
+- beauty: The distribution is symmetric and there do not seem to be significant differences in beauty in terms of gender  
+- skin health: The distribution is right-skewed and more variance is observed in female profiles, that have a more distributed curve and higher median  
+- smile: This is an example of bimodal distribution. In this case, men have a wider interquartile range while women are more closely packed towards the higher number of the smile index. In general most profiles have a smile index higher than 50, however the women peak is really interesting: they tend to smile more in the photos!  
+- experience: As expected, this distribution is very similar to n_employers and n_positions. It shows a small difference between males and females and the distribution is extremely right-skewed  
+
+The variables with an evident bimodal behavior (two big peaks close to 0 and to 1, while the values in between almost blank) are transformed into binary, using the value 50 as the threshold.  
+
+```{r}
+profiles$emo_happiness <- ifelse(profiles$emo_happiness >= 50, 1, 0)
+profiles$mouth_close <- ifelse(profiles$mouth_close >= 50, 1, 0)
+profiles$emo_neutral <- ifelse(profiles$emo_neutral >= 50, 1, 0)
+```
+
+### 2.3 Variables selection
+
+As said, many of the variables were discarded from the analysis because for different reasons they not useful for analysis purposes:  
+- redundant attributes  
+- very skewed distributions  
+- bimodal distributions 
+
+The updated dataset, profiles_quan, contains only the attributes that will be used for the sake of the analysis.
+
+```{r}
+profiles_quan <- profiles_quan[-c(3,4,6:17)]
+```
+
+
+
+# 3. Correlation matrix
+
+The sample means of the numerical attributes are given here below:
+
+```{r}
+m <- colMeans(profiles_quan)
+m
+```
+
+The correlation matrix is plotted to check any  possible correlation between the remaining attributes. 
+
+```{r}
+S <- cov(profiles_quan)
+S
+R <- cor(profiles_quan)
+R
+
+#dev.new(width=15,height=15,noRStudioGD = TRUE)
+corrplot(R)
+```
+We can here conclude interesting insights:  
+- age is negatively correlated with beauty and positively correlated with experience.  
+- beauty is positively correlated with skin_health.  
+- the skin attributes are somehow correlated between them. Skin_acne is positively correlated with skin_stain and negatively with skin_health. The correlation with skin_dark_circle is not massive.  
+- n_employers is positively correlated with n_positions and experience.  
+
+As a conclusion of that, it is chosen to eliminate the redundant attributes, which in this case can be skin_acne, n_employers and n_positions.
+
+```{r}
+profiles_quan <- profiles_quan[-c(4,10,11)]
+```
+
+#### 3.1 Scatterplot matrix  
+
+The scatterplot matrix is shown in the following figure for the selected variables:  
+
+```{r, fig.width=20, fig.height=20}
+
+pairs(profiles_quan, col=color_1)
+```
+
+
+### 4. PCA  
+### 4.1 Variable transformation  
+
+The variables with high skewness are transformed by means of the log transformation to make them more symmetric.  
+The new kernel density plots are given. In same cases the result has improved very much (skin_dark_circle, n_followers, experience), while in others there is still some kind of asymmetry or non-smoothness in the curve.
+
+```{r}
+profiles_pca <- profiles_quan
+names <- names(profiles_pca[-c(1,2,6,8,9)])
+par(mfrow=c(3,3))
+for (name in names) {
+  profiles_pca[,name] <- log(profiles_pca[,name])
+  plot(density(profiles_pca[,name],kernel="gaussian"),ylab="DENSITY",main=paste("KERNEL DENSITY OF", name), xlab=name, col=color_1,lwd=2)
+}
+
+names <- names(profiles_pca[c(6,8,9)])
+for (name in names) {
+  profiles_pca[,name] <- log(1+profiles_pca[,name])
+  plot(density(profiles_pca[,name],kernel="gaussian"),ylab="DENSITY",main=paste("KERNEL DENSITY OF", name), xlab=name, col=color_1,lwd=2)
+}
+
+has_na(profiles_pca)
+```
+
+### 4.2 PCA analysis
+
+A PCA analysis is run to reduce the dimensionality of the problem. In this case the attributes that are being considered are few, but in general the number of these is much bigger.  
+The plot of the first two principal components is given.
+
+```{r}
+n <- nrow(profiles_pca)
+p <- ncol(profiles_pca)
+pca_results <- prcomp(profiles_pca,scale=TRUE)
+loadings <- pca_results$rotation
+scores <- pca_results$x
+
+plot(scores[,1:2])
+```
+
+The elbow graph is given. It is a useful tool to check how many principal components are enough to describe a good portion of the total variance.  
+In general, the idea is to take the number of principal components corresponding to the elbow point in the graph.
+
+```{r}
+eigenvalues <- get_eig(pca_results)
+x_array <- seq(1,nrow(eigenvalues))
+plot(x_array, eigenvalues[,2], type="b", col=color_4, main="Explained variance", ylab="Variance percentage", xlab="Principal Components")
+```
+
+In this case there is no elbow, and starting from PC3 the trend is quite linear until the last PC.  
+As the dimensionality of the problem is already not so big, it is reasonable to take only the first two principal components which describe together almost the 40% of the total variance.  
+
+Let's give some interpretation to the first PCs.
+
+```{r}
+plot(x_array, loadings[,1], main="Weigths for the 1st PC", xlab="Variables", ylab="Score")
+abline(h=0)
+text(x_array,loadings[,1],labels=colnames(profiles_pca),pos=1,col=color_4,cex=0.75)
+```
+
+The first principal component is somehow related to noun and experience: in the bottom part there are beauty and skin_health, while in the top of the graph there is the rest of the attributes.  
+
+```{r}
+plot(x_array,loadings[,2], main="Weigths for the 2nd PC", xlab="Variables", ylab="Score") #graph of the weights of the PC1
+abline(h=0)
+text(x_array,loadings[,2],labels=colnames(profiles_pca),pos=1,col=color_1,cex=0.75)
+```
+
+The second principal component is harder to interpret, but seems to be related to the quality of the photo.  
+Then, the weights can be plotted together:
+
+```{r}
+plot(loadings[,1:2], main="Weigths for the first two PCs", xlab="PC1", ylab="PC2")
+abline(h=0,v=0)
+text(loadings[,1:2],labels=colnames(profiles_pca),pos=1,col=color_4,cex=0.75)
+draw.circle(0,0,0.3,border=color_4,lwd=3)
+```
+
+The beauty attributes are in the top-left portion, while the experience and age attributes are in the bottom-right portion.  
+The attributes that are farther from the center of the graph (i.e. beauty, skin_health) are the ones that generate the largest variability, thus they are more influent. 
+
+The scores of the four main PCs are then checked.
+
+```{r}
+pairs(scores[,1:4],pch=19,main="The first four PCs") #plot of the scores
+```
+
+The correlation between the original attributes and the principal components is investigated.  
+
+```{r}
+corrplot(cor(profiles_pca,scores),is.corr=T)
+```
+
+The first principal component is positively correlated with age, skin_stain and negeatively with beauty and skin_health.  
+The second principal component is negatively correlated with smile, age and experience.
+
+```{r}
+biplot(pca_results,cex=c(0.5,0.8), xlim=c(-0.03,0.03), ylim=c(-0.02,0.03))
+```
+
+The scores of the PCs are represented in black, while the loadings are shown with red arrows. From the biplot, some considerations are derived:  
+- the dataset is quite balanced because the points are equally distributed on the PC1-PC2 plane.  
+- n_followers and smile are highly correlated because the arrows point almost in the same direction.  
+- beauty and n_followers are not so correlated. It is interesting to see that nice-looking candidates are not rewarded because of the beauty.  
+
+#### 4.2.1  Shrinkage
+
+
+
+```{r}
+library(corpcor)
+S_shrink <- cov.shrink(profiles_quan)
+S <- S_shrink[1:ncol(profiles_quan),1:ncol(profiles_quan)]
+library(RSpectra)
+eig_S <- eigs_sym(S,2)
+eig_s <- eigs_sym(S,ncol(profiles_quan))
+X_centred <- scale(profiles_quan,scale=FALSE)
+eigen_vectors_S <- eig_S$vectors[,1:2]
+Z <- X_centred %*% eigen_vectors_S
+plot(Z,pch=19,col=color_1,main="First two PCs",xlab="First PC",ylab="Second PC")
+
+# Proportion of variability explained by the PCs and accumulated proportion of variability
+
+eigen_values_S <- eig_s$values
+prop_var <- eigen_values_S/sum(eigen_values_S)
+acum_prop_var <- cumsum(eigen_values_S)/sum(eigen_values_S)
+cbind(prop_var,acum_prop_var)
+```
+```{r}
+# Have a look at the first 9 eigenvalues and the associated accumulated proportion of variability
+
+par(mfrow=c(1,2))
+plot(1:9,eigen_values_S[1:9],col=color_1,type="b",xlab="Number",ylab="Eigenvalues",pch=19,main="Eigenvalues of shrinkage covariance")
+plot(1:9,acum_prop_var[1:9],col=color_1,type="b",xlab="Number",ylab="Eigenvalues",pch=19,main="Accumulated eigenvalues")
+```
+It can be seen that with the first 2 PC almost all the variability is explained (99.9%), and they are the only ones with non negligible eigenvalues.
+
+
+#### 4.2.2 Categorical separation
+
+The available categorical variables were used to try to divide the population and get some interesting insights on the PCA analysis.
+
+```{r}
+#glass
+var_cat <- profiles$glass
+n_cat <- length(unique(var_cat))
+arrayy <- seq(1:n_cat)
+colors_X <- rainbow(n_cat)[1*(var_cat=="Normal")+2*(var_cat=="None")+3*(var_cat=="Dark")]
+plot(scores[,1:2], col=colors_mix[2:4]) #plot of the first two PCs
+legend("bottomleft",legend=unique(var_cat), col=colors_mix[2:4], lty=c(1,2), cex=0.6)
+
+#gender
+var_cat <- profiles$gender
+n_cat <- length(unique(var_cat))
+arrayy <- seq(1:n_cat)
+colors_X <- rainbow(n_cat)[1*(var_cat=="Male")+2*(var_cat=="Female")]
+plot(scores[,1:2], col=colors_mix[3:4]) #plot of the first two PCs
+legend("bottomleft",legend=unique(var_cat), col=colors_mix[3:4], lty=c(1,2), cex=0.6)
+
+#ethnicity
+var_cat <- profiles$ethnicity
+n_cat <- length(unique(var_cat))
+arrayy <- seq(1:n_cat)
+colors_X <- rainbow(n_cat)[1*(var_cat=="Asian")+2*(var_cat=="White")+3*(var_cat=="Black")]
+plot(scores[,1:2], col=colors_mix[1:3]) #plot of the first two PCs
+legend("bottomleft",legend=unique(var_cat), col=colors_mix[1:3], lty=c(1,2), cex=0.6)
+
+#nationality
+var_cat <- profiles$nationality
+n_cat <- length(unique(var_cat))
+arrayy <- seq(1:n_cat)
+colors_X <- rainbow(n_cat)[1*(var_cat=="east_asian")+2*(var_cat=="celtic_english")+3*(var_cat=="european")+3*(var_cat=="african")+3*(var_cat=="muslim")+3*(var_cat=="south_asian")+3*(var_cat=="nordic")+3*(var_cat=="hispanic")+3*(var_cat=="greek")+3*(var_cat=="jewish")]
+plot(scores[,1:2], col=colors_mix) #plot of the first two PCs
+legend("bottomleft",legend=unique(var_cat), col=colors_mix, lty=c(1,2), cex=0.6)
+```
+
+Anyway it is clear that, considering the first two principal components, none of these categorical variables is able to divide the population.  
+
+### 4.3 ICA analysis
+
+The aim of the ICA analysis is to find components which are not only uncorrelated, but also independent.  
+Instead of maximizing the variance of the variables, the non-gaussianity of the variables is here maximized.  
+The metrics for non-gaussianity is obtained with the Neg-enthropy function, which depends on skewness and kurtosis.  
+The icafast algorithm is designed to find these orthogonal components with high non-gaussianity.  
+
+
+```{r}
+ica_results <- icafast(profiles_pca, nc=p,alg="par")
+scores_ica <- ica_results$S
+colnames(scores_ica) <- sprintf("IC-%d",seq(1,dim(scores_ica)[2]))
+scores_ica <- scores_ica * sqrt((n-1)/n)
+
+par(mfrow=c(3,3))
+sapply(colnames(scores_ica),function(cname){hist(as.data.frame(scores_ica)[[cname]],main=cname,col=color_1,xlab="")})
+```
+Above the histograms of the Independent Components are shown.  
+
+The ICs are then sorted by neg-entropy, from highest to lowest, and the result is plotted.
+
+```{r}
+neg_entropy <- function(scores_ica){1/12 * mean(scores_ica^3)^2 + 1/48 * mean(scores_ica^4)^2}
+#calculate the neg_entropy for each IC
+scores_neg_entropy <- apply(scores_ica,2,neg_entropy)
+ic_sort <- sort(scores_neg_entropy,decreasing=TRUE,index.return=TRUE)$ix
+ic_sort
+
+par(mfrow=c(1,1))
+plot(scores_neg_entropy[ic_sort],type="b",col=color_1,pch=19,ylab="Neg-entropy",main="Neg-entropies",lwd=3)
+scores_ic_imp <- scores_ica[,ic_sort]
+```
+The first two ICs have much larger neg-entropy compared to the others.  
+The first ICs should be the ones that reveal the outliers, while the last ones reveal the eventual population division by some categorical variable.
+
+The scores of the first ICs are represented in the matrix below.  
+
+```{r}
+par(mfrow=c(1,1))
+pairs(scores_ic_imp[,1:9],pch=19,main="The ICs")
+```
+
+
+```{r}
+corrplot(cor(profiles_pca,scores_ic_imp),is.corr=T)
+```
+
+The most influent IC is positively correlated with n_followers, while the second one is positively correlated with experience. The rest of the ICs are mainly positively/negatively correlated with one attribute each.  
+
+The two main Independent Components are then plotted:
+
+```{r}
+Z_ic_imp <- scores_ica[,ic_sort]
+colors_IC <- c(color_2,color_3)[1*(profiles$gender=="Female")+1]
+par(mfrow=c(1,1))
+plot(Z_ic_imp[,1:2],pch=19,col=colors_IC,xlab="First IC scores",ylab="Second IC scores",main="First two IC scores in terms of gender")
+```
+
+However, even if it seems that there are at least two populations, neither with the gender attribute nor with the other categorical attributes was possible to differentiate the two (or more) populations.  
+
+On the other hand, the Independent Components with smallest neg-entropy are:  
+
+```{r}
+plot(Z_ic_imp[,8:9],pch=19,col=colors_IC,xlab="11-th IC scores",ylab="12-th IC scores",main="Last two IC scores")
+```
+
+The scatterplot of the last ICs is usually the one which shows the separation of the different groups. In this case, it is possible to observe that the observations on the left-hand side are mostly orange (female) while the other ones are mostly green (men).
+
+
+## 5 UNSUPERVISED CLASSIFICATION - CLUSTER ANALYSIS
+
+The goal of unsupervised classification, also known as "cluster analysis", is to group objects, observations that are somehow similar in a multidimensional dataset into different homogeneous groups, subsets according to some criterion. Those groups, also known as clusters, are linked with populations, and once obtained, their structure should be analyzed. 
+
+Even though one might think clustering is a simple method, several challenges are found on the way, like what a meaningful cluster really is, or how many clusters are appropriate. There are three different procedures, each one of which approaches these issues in a different manner, as is going to be seen.
+
+A reduced dataset was produced comprised of 1000 random samples in order to be able to compute some of the methods which were unable to finish due to the computational expense. These were the DIANA algorithm and the GAP statistic.
+
+```{r}
+library(dplyr)
+profiles_pca_reduced <- sample_n(profiles_pca, 1000, replace = TRUE) 
+```
+
+# 5.1 - PARTITIONAL CLUSTERING - K-MEANS & K-MEDOIDS
+
+This procedure starts from an initial cluster and exchanges elements between clusters until an appropriate cluster structure is found. The most popular method is the K-means algorithm, however, other modifications of this algorithm are also used, like the K-medoids one.
+
+The main advantage of this algorithm is its efficiency for clustering large data matrices (like in Big Data itself).
+
+On the other hand, its main disadvantage is that the number of clusters has to be provided as input. For this purpose, up to 10 clusters will be evaluated.
+
+In partitional clustering with K-means, one is interested in finding the partition that minimizes the WSS ("Within-Cluster Sums of Squares"), which is a sum in all partitions of the squared Euclidean distance between a certain point $x_i$ in a partition $C_k$ and the sample mean vector of the observations in cluster k, $\bar x_k$
+ 
+
+* WSS - Within Clusters Sum of Squares:
+
+```{r}
+#WSS plot
+library("factoextra")
+
+
+#unclear with wss
+fviz_nbclust(profiles_pca,kmeans,method="wss",k.max=8)
+
+```
+There is not a clear elbow in the graph, considering a maximum number of k=8 clusters, but k=2 seems to be the most suitable solution. Let's see the average silhouette in order to gain further insights.
+
+* Average Silhouette - 
+
+Using the average silhouette as a score for the number of clusters, it can be clearly seen that 2 clusters achieve the best value, as it could be slightly infered from the WSS graph.
+
+```{r}
+#Silhouette
+#the plot clearly suggests k =2
+fviz_nbclust(profiles_pca,kmeans,method="silhouette",k.max=8)
+```
+
+* Gap Statistic
+
+```{r}
+#Gap statistic
+library(cluster)
+gap_stat <- clusGap(profiles_pca_reduced,FUN=kmeans,K.max=8,B=100)
+fviz_gap_stat(gap_stat,linecolor="steelblue",maxSE=list(method="firstmax",SE.factor = 1))
+```
+
+
+
+# KMeans
+
+The quantitative data was clustered using KMeans with 2 clusters and plotted against the first 2 Principal Components and Independent Components:
+
+```{r}
+library(cluster)
+
+kmeans_X <- kmeans(profiles_pca,centers=2,iter.max=1000,nstart=100)
+colors_kmeans_X <- c(color_1,color_2)[kmeans_X$cluster]
+
+par(mfrow=c(1,2))
+
+plot(scores[,1:2],pch=19, col=colors_kmeans_X,xlab="First PC",ylab="Second PC",main="First two PC Divided by Cluster") #plot of the first two PCs
+
+plot(Z_ic_imp[,1:2],pch=19,col=colors_kmeans_X,xlab="First IC",ylab="Second IC",main="First two IC Divided by Cluster")
+
+
+
+```
+
+Evaluate how the cluster is dividing the original dataset, both the qualitative and quantitative variables. It becomes clear that the cluster division does not affect the qualitative attributes and is only separating profiles in terms of their age and beauty, possibly some other parameters such as skin health and experience as a side effect.
+
+```{r}
+par(mfrow=c(2,2))
+counts <- table(profiles$gender,kmeans_X$cluster)
+barplot(counts, main="Cluster vs Gender",
+  xlab="Cluster", col=c("darkblue","red"),
+  legend = rownames(counts), beside=TRUE)
+
+counts <- table(profiles$ethnicity,kmeans_X$cluster)
+barplot(counts, main="Cluster vs Ethnicity",
+  xlab="Cluster", col=c("darkblue","red","green"),
+  beside=TRUE)
+
+counts <- table(profiles$glass,kmeans_X$cluster)
+barplot(counts, main="Cluster vs Glass",
+  xlab="Cluster", col=c("darkblue","red","green"),
+   beside=TRUE)
+
+counts <- table(profiles$nationality,kmeans_X$cluster)
+barplot(counts, main="Cluster vs Nationality",
+  xlab="Cluster", col=c("darkblue","red","green","yellow","orange","lightblue","pink","purple","magenta","cyan"),
+  beside=TRUE)
+
+
+pairs(profiles_pca, col=colors_kmeans_X)
+```
+
+
+The clusters to which the points are assigned do not seem to be quite accurate in the case of IC, as they cannot be clearly differentiated. However, in the PC case, even though it could seem to be a single cluster, the two groups are heterogeneous, and can be appreciated.
+
+# KMedoids
+
+K-means algorithm has some weaknesses, like its high sensitivity to outliers, its problems when the shape of the clusters is not spherical, and the fact that it only runs with quantitative variables. Nevertheless, K-medoids can tackle with the first one, by replacing the sample mean vector with a central observation of the cluster, which is called the $\textit{medoid}$.
+
+The main algorithms of this approach are:
+
+-PAM (Partitioning Around Medoids, the standard one)
+-CLARA (CLustering for lARge Applications, designed for large applications)
+-PAM algorithm with the Gower distance (used for datasets with both quantitative and qualitative variables)
+
+* Partitioning Around Medoids with the Manhattan distance - PAM  
+
+This algorithm can handle the problem of dealing with non-spherical datasets, and uses the Manhattan distance in the presence of outliers, like in this case, instead of the Euclidean distance. 
+
+
+```{r}
+pam_X <- pam(profiles_pca,k=2,metric="manhattan",stand=FALSE)
+
+# Make a plot of the first two PCs with the solution
+
+colors_pam_X <- c(color_1,color_2)[pam_X$cluster]
+plot(scores[,1:2],pch=19,col=colors_pam_X,main="First two PCs Divided by Cluster",xlab="First PC",ylab="Second PC")
+
+# Plot the silhouette
+
+sil_pam_X <- silhouette(pam_X$cluster,dist(profiles_pca,method="manhattan"))
+plot(sil_pam_X,col=color_1, border=NA)
+```
+
+* Clustering for Large Applications - CLARA
+
+ The idea of this algorithm is to run PAM to a random sub-sample from the dataset in order to find appropriate medoids, and assigning every observation in this dataset to those medoids with the Euclidean or the Manhattan distance. It can be run several times, and is the most ideal one for Big Data.
+
+
+```{r}
+clara_X <- clara(profiles_pca,k=2,metric="manhattan",stand=FALSE)
+
+# Make a plot of the first two PCs with the solution
+
+colors_clara_X <- c(color_1,color_2)[clara_X$cluster]
+plot(scores[,1:2],pch=19,col=colors_clara_X,main="First two PCs Divided by Cluster",xlab="First PC",ylab="Second PC")
+
+# Plot the silhouette
+
+sil_pam_X <- silhouette(pam_X$cluster,dist(profiles_pca,method="manhattan"))
+plot(sil_pam_X,col=color_1, border=NA)
+```
+
+Similar results arise with PAM and with CLARA, there are two clearly different clusters, with correct silhouettes that show few problematic points with negative values.
+
+
+
+
+## 5.2 HIERARCHICAL CLUSTERING - LINKAGE & DIVISIVE ALGORITHMS
+
+The second method for unsupervised classification is hierarchical clustering, a procedure which does not require to fix the number of groups in advance (which clearly is an advantage). There are two approaches:
+
+-Agglomerative algorithms: Starting from clusters containing a single observation, and merges them. 
+
+-Divisive algorithms: Starting from a single cluster with all the observations, and splits it into other clusters.
+
+This procedure strongly depends on the distance considered between clusters, and its main advantages are:
+
+-No need to fix the number of clusters in advance.
+
+-The dendogram as an useful descriptive tool for finding the appropriate number of clusters.
+
+On the other hand, the disadvantages are:
+
+-Early incorrectly grouped observations cannot be reallocated.
+
+-It is computationally expensive (hence, not suitable for Big Data).
+
+# Linkage Algorithms
+
+These algorithms compute the distance $d_{c_i,c'}$ between a new cluster $c'$ and the other clusters $c_i$, in four different ways, none of whom is better than the other, as they are usually compared in each case:
+
+-Single Linkage
+
+It often leads to long clusters, joined by singleton observations close to each other, not appealing in a practical way.
+
+$d_{c_i,c'}=min\{d_{c'_i,c'},d_{c''_i,c'}\}$ for a cluster $c'$ that replaces the two clusters that are merged into it, $c'_i$ and $c''_i$.
+
+```{r}
+library(cluster)
+man_dist_X <- daisy(profiles_pca,metric="manhattan",stand=FALSE)
+```
+
+```{r}
+# Single linkage
+single_X <- hclust(man_dist_X,method="single")
+cl_single_X <- cutree(single_X,2)
+sil_single_X <- silhouette(cl_single_X,man_dist_X)
+
+# Plot dendogram of the solution for k=5 as in K-means
+
+plot(single_X,main="Single linkage",cex=0.8)
+rect.hclust(single_X,k=5,border=color_1)
+
+# The silhouette
+
+plot(sil_single_X,col=color_1,border=NA, main="Silhouette Single Linkage")
+
+```
+There is an enormous cluster with almost all the observations, and another one with only 1 observation, and there are many problematic point, with negative silhouettes, so this does not seem to be a good solution.
+
+-Complete linkage
+
+This method tends to produce several small and compact clusters.
+
+$d_{c_i,c'}=max\{d_{c'_i,c'},d_{c''_i,c'}\}$
+
+```{r}
+complete_X <- hclust(man_dist_X,method="complete")
+cl_complete_X <- cutree(complete_X,5)
+sil_complete_X <- silhouette(cl_complete_X,man_dist_X)
+
+# Plot dendogram of the solution for k=5 as in K-means
+
+plot(complete_X,main="Complete linkage",cex=0.8)
+rect.hclust(complete_X,k=5,border=color_1)
+
+# The silhouette
+
+plot(sil_complete_X,col=color_1,border=NA, main="Silhouette Complete Linkage")
+```
+There are five clusters, one with almost every observation, and another four tiny ones, and some problematic points.
+
+-Average linkage
+
+It is dependent on the size of the clusters, in constrast with the previous methods.
+
+$d_{c_i,c'}=\sum_{i\in c_i}\sum_{i'' \in c'}\frac{d_{i,i''}}{n_{i}n_{i''}}$, for $n_i$ and $n_{i''}$ the number of observations in clusters $c_i$ and $c'$, respectively.
+
+```{r}
+average_X <- hclust(man_dist_X,method="average")
+cl_average_X <- cutree(average_X,5)
+sil_average_X <- silhouette(cl_average_X,man_dist_X)
+
+# Plot dendogram of the solution for k=2 as in K-means
+
+plot(average_X,main="Average linkage",cex=0.8)
+rect.hclust(average_X,k=2,border=color_1)
+
+
+# The silhouette
+
+plot(sil_average_X,col=color_1,border=NA, main="Silhouette Average Linkage")
+```
+In this case, the results that arise are similar to the ones in single linkage.
+
+-Ward linkage
+
+It is used to provide with solutions similar to the ones in K-means.
+
+In this last case, $d_{c_i,c'}$ is the squared Euclidean distance between the sample mean vector of both clusters.
+
+```{r}
+ward_X <- hclust(man_dist_X,method="ward")
+cl_ward_X <- cutree(ward_X,2)
+sil_ward_X <- silhouette(cl_ward_X,man_dist_X)
+
+# Plot dendogram of the solution for k=2 as in K-means
+
+plot(ward_X,main="Ward linkage",cex=0.8)
+rect.hclust(ward_X,k=2,border=color_1)
+
+
+# The silhouette
+
+plot(sil_ward_X,col=color_1,border=NA, main="Silhouette Ward Linkage")
+```
+
+In this last algorithm, there is a big cluster and a smaller one, also with some problematic points found.
+
+As a conclusion, the solutions obtained with these methods do not seem to be satisfying and the best ones are acquired with the single linkage and the Ward linkage.
+
+# Divisive Algorithms - DIANA
+
+The most popular divisive algorithm is the DIANA one (DIvisive ANAlysis Clustering). At each step, the cluster with the largest diameter is split into two clusters, until all observations form a single cluster.
+
+```{r}
+library(cluster)
+diana_X <- diana(profiles_pca_reduced,metric="manhattan")
+cl_diana_X <- cutree(diana_X,2)
+
+## Plot the dendogram of the solution
+
+plot(diana_X,main="DIANA")
+
+## Plot the silhouette
+man_dist_X_red <- daisy(profiles_pca_reduced,metric="manhattan",stand=FALSE)
+
+sil_diana_X <- silhouette(cl_diana_X,man_dist_X_red)
+plot(sil_diana_X,col=color_1, border=NA)
+
+
+```
+Again, the clusters are diving the data as expected, by age and beauty.
+```{r}
+colors_diana_X <- c(color_1,color_2)[cl_diana_X]
+
+pairs(profiles_pca_reduced, col=colors_diana_X)
+
+```
+
+With k=2 clusters, of similar size, this computes the optimal solution, as no points can be seen with negative silhouette. 
+
+
+## 5.3 MODEL-BASED CLUSTERING
+
+Contrary to the other clustering approaches, model-based clustering is a probabilistic-based method, and not a distance-based one. It can handle mixture distributions, with the assumption that observations are generated by different distributions, with their probabilities. Each observation is assigned to different clusters, following the $\textit{Bayes Theorem}$, so that an observation $x_i$ is assigned to the cluster with the maximum value of $Pr(x_i \in P_k$, the probability that observation $x_i$ belongs to population $P_k$.
+
+When selecting the optimal k, the BIC (Bayesian Information Criterion) is followed, seeking to minimize it. The smaller the number of parameters $n$ with K clusters, the larger the BIC, and there is more overfitting, but the larger the $k$, the larger the BIC (trade-off between $n$ and $k$).
+
+The most widely used model-based clustering method is M-Clust, and assumes a gaussian distribution in the dataset. It uses the SVD (Singular Value Decomposition) to classify different configurations of the data.
+
+Only the first two PC are going to be considered in this analysis, since they explain almost all the variability of the dataset, and the shrinkage covariance matrix is going to be used in this case.
+```{r}
+library(mclust)
+
+library(corpcor)
+S_shrink1 <- cov.shrink(profiles_quan)
+S1 <- S_shrink1[1:ncol(profiles_quan),1:ncol(profiles_quan)]
+library(RSpectra)
+eig_S1 <- eigs_sym(S1,8)
+#eig_s1 <- eigs_sym(S1,ncol(profiles_quan))
+X_centred1 <- scale(profiles_quan,scale=FALSE)
+eigen_vectors_S1 <- eig_S1$vectors[,1:8]
+Z1 <- X_centred1 %*% eigen_vectors_S1
+
+# Compute the value of the BIC for all the possible configurations
+
+BIC_X <- mclustBIC(Z1[,1:2],G=1:5)
+BIC_X
+
+plot(BIC_X)
+
+
+```
+
+
+
+```{r}
+# Run Mclust for the optimal solution
+
+Mclust_X <- Mclust(Z1[,1:2],x=BIC_X)
+summary(Mclust_X)
+
+# Plot the groups
+
+plot(Mclust_X,what="classification")
+
+```
+The model with the lowest BIC value is selected, since we are plotting -BIC, and not BIC itself: an ellipsoidal, varying volume, shape and orientation model with 5 clusters.
+
+```{r}
+# Plot the estimated densities
+
+plot(Mclust_X,what="density", xlim = c(-2e3,1e3), ylim = c(-5e3,5e3))
+```
+
+No clear conclusions can be inferred from the density plot, since the density is located at an extreme close to the origin, with small variability.
+
+```{r}
+
+# Plot the estimated probabilities of the observations for each cluster
+
+colors_Mclust_X <- c(color_1,color_2,color_3,color_4)[Mclust_X$classification]
+par(mfrow=c(2,2))
+
+
+plot(1:nrow(profiles_quan),Mclust_X$z[,1],pch=19,col=colors_Mclust_X,main="Cluster 1",xlab="Profile",ylab="Probability of cluster 1")
+plot(1:nrow(profiles_quan),Mclust_X$z[,2],pch=19,col=colors_Mclust_X,main="Cluster 2",xlab="Profile",ylab="Probability of cluster 2")
+plot(1:nrow(profiles_quan),Mclust_X$z[,3],pch=19,col=colors_Mclust_X,main="Cluster 3",xlab="Profile",ylab="Probability of cluster 3")
+plot(1:nrow(profiles_quan),Mclust_X$z[,4],pch=19,col=colors_Mclust_X,main="Cluster 4",xlab="Profile",ylab="Probability of cluster 4")
+
+```
+Regarding the estimated probabilities of belonging to each one of the clusters, there is a correlation between a point belonging to a cluster $c_i$ and a high probability, even though in points belonging to other clusters $c_j$, the probabilities of pertaining to the cluster $c_i$ are too high, and this is not a satisfying result. After all, the four clusters cannot be differentiated in a clear manner, so it is not surprising.
+
+```{r}
+
+# Plot the points with uncertainty
+
+par(mfrow=c(1,1))
+plot(Mclust_X,what="uncertainty")
+```
+The 5 clusters are not uncorrelated, and it is not astonishing, the fact that there are so many points with uncertainty.
+
+
+
+
+## 6 SUPERVISED CLASSIFICATION  
+
+Supervised classification is a family of techniques that allow to predict the classification of new observations, basing on history.  
+The idea is to divide the dataset into partitions (usually training set and testing set). With the first one the model is trained, while aim of the second one is to estimate the pessimistic score of the model.  
+During this course, the algorithms that have been analysed are the ones based on Bayes Theorem (LDA, QDA and Naive Bayes), KNN, and Logistic Regression.  
+The aim of this part of the assignment is to check whether one of these methods work better with the dataset being studied. 
+
+The first steps consist on the preparation of the datasets. The flow is:  
+- Separate the x attributes from the response variable 
+- Divide at random the dataset into training (2/3) and test (1/3) samples  
+
+Starting from the result of PAM algorithm, the categorical variable that will be used here is the cluster belonging: 1 or 2.  
+In this work, the target of the supervised classification is to predict the cluster of one observation, given the rest of the attributes.  
+
+```{r}
+X <- as.matrix(profiles_pca)
+Y <- pam_X$cluster
+Y <- ifelse(Y==1, "1", "2")
+n <- nrow(X)
+p <- ncol(X)
+p_1 <- sum(Y=="1")/n
+p_2 <- sum(Y=="2")/n
+print(paste0("The proportion of CL1 and CL2 observations are: ", round(p_1,2), "-", round(p_2,2)))
+```
+It can be seen that the dataset is well balanced between the two clusters.  
+The dataset is here split into train and test. The first takes 2/3 of the observations (which are chosen randomly), while the latter takes the remaining 1/3.
+ 
+```{r}
+set.seed(123)
+n_tr <- floor(0.66*n)
+n_test <- n - n_tr
+i_tr <- sort(sample(1:n,n_tr))
+i_test <- setdiff(1:n,i_tr)
+
+```
+
+Finally, the two datasets (X_tr and X_test) and the two response vectors (Y_tr and Y_test) are assembled.  
+It also checked that the random division of the response vector has equally distributed the values of the two classes into the two new vectors.  
+
+```{r}
+X_tr <- X[i_tr,]
+Y_tr <- Y[i_tr]
+X_test <- X[i_test,]
+Y_test <- Y[i_test]
+
+sum(Y_tr==1)/n_tr
+sum(Y_test==1)/n_test
+```
+The proportion of cluster 1 observations in the training set is very close to the one of the test set (and thus to the original dataset).  
+Now the different supervised learning algorithms can be run.  
+
+##6.1 MODELS BASED ON BAYES THEOREM - LDA, QDA, NAIVE BAYES  
+The Bayes Theorem affirms that:  
+$\mathbb{P}(y=j|x=x_{0}=\frac{\pi_{j}f_{j}(x_{0}|\theta_{j})}{\sum_{g=1}^{J}\pi_{g}f_{g}(x_{0}|\theta_{g})}$  
+
+
+### LINEAR DISCRIMINANT ANALYSIS (LDA)  
+It is the standard method for the Bayesian approach.  
+The assumption here is that the distributions $f_{i}(\cdot|\mu_{i},\Sigma)$ are multivariate gaussian distributions with different $\mu_{i}$ but the same $\Sigma$.  
+The parameters $\pi_{j}$,$\mu_{i}$ and $\Sigma$ are estimated with the training set and then used in the probability equation.  
+
+The lda algorithm (belonging to MASS library) is run on the training set:  
+
+```{r}
+library(MASS)
+lda_tr <- lda(Y_tr ~ .,data=as.data.frame(X_tr))
+```
+
+The estimated prior probabilities for the two groups are:  
+
+```{r}
+lda_tr$prior
+```
+While the estimated sample mean vectors are:  
+
+```{r}
+t(lda_tr$means)
+```
+It can be observed that some of the attributes have different sample mean depending on the group to which they belong (i.e. age and beauty) while others have smaller differences (i.e. n_followers and experience).  
+
+The model is then used to predict the observations of the test set:  
+
+```{r}
+lda_test <- predict(lda_tr,newdata=as.data.frame(X_test))
+lda_Y_test <- lda_test$class
+```
+
+The confusion matrix is then displayed to check how many misclassifications have been done for each group.
+
+```{r}
+lda_tab <- table(Y_test,lda_Y_test)
+lda_tab
+```
+The confusion matrix suggests us that the number of misclassifications is quite small for each of the two groups.  
+
+```{r}
+T1R <- lda_tab[1,1]/(lda_tab[1,1]+lda_tab[1,2])
+T2R <- lda_tab[2,2]/(lda_tab[2,1]+lda_tab[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+The score of the classifier is here given by the Test Error Rate (TER)
+
+```{r}
+lda_TER <- mean(Y_test!=lda_Y_test)
+```
+
+```{r}
+print(paste0("The TER with the LDA algorithm is: ", round(lda_TER,2)))
+```
+The posterior probabilities of the classifications made with the test sample are given, and the plot of the probabilities is displayed.
+
+```{r}
+prob_lda_Y_test <- lda_test$posterior
+colors_errors <- c(color_3,color_1)[1*(Y_test==lda_Y_test)+1]
+```
+
+```{r}
+plot(1:n_test,prob_lda_Y_test[,1],col=colors_errors,pch=20,type="p",xlab="Test set",ylab="Probabilities of being Cluster 1",
+     main="Probabilities of being Cluster 1 with LDA")
+abline(h=0.5)
+```
+
+The number of misclassifications is quite reasonable.
+
+
+### QUADRATIC DISCRIMINANT ANALYSIS (QDA)  
+This algorithm is similar to the previous one, but here the covariance matrixes $\Sigma_{i}$ are assumed to be different, and they are the sample covariance matrixes of the observations in the different groups.  
+In this method, a quantity of uncertainty is added compared to the previous method, because the term relating to $\Sigma_{i}$ appears in the probability equation.  
+
+The model is trained with the training set.
+
+```{r}
+qda_tr <- qda(Y_tr ~ .,data=as.data.frame(X_tr))
+```
+
+The estimated prior probabilities for the two groups are:  
+
+```{r}
+qda_tr$prior
+```
+The model is then used to predict the observations of the test set:  
+
+```{r}
+qda_test <- predict(qda_tr,newdata=as.data.frame(X_test))
+qda_Y_test <- qda_test$class
+```
+
+The confusion matrix is then displayed to check how many misclassifications have been done for each group.
+
+```{r}
+qda_tab <- table(Y_test,qda_Y_test)
+table(Y_test,qda_Y_test)
+```
+Here the misclassifications are slightly higher than in the previous method, for both groups.  
+
+```{r}
+T1R <- qda_tab[1,1]/(qda_tab[1,1]+qda_tab[1,2])
+T2R <- qda_tab[2,2]/(qda_tab[2,1]+qda_tab[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+```{r}
+qda_TER <- mean(Y_test!=qda_Y_test)
+```
+
+```{r}
+print(paste0("The TER with the QDA algorithm is: ", round(qda_TER,2)))
+```
+The posterior probabilities of the classifications made with the test sample are given, and the plot of the probabilities is displayed.
+
+```{r}
+prob_qda_Y_test <- qda_test$posterior
+colors_errors <- c(color_3,color_1)[1*(Y_test==qda_Y_test)+1]
+```
+
+```{r}
+plot(1:n_test,prob_qda_Y_test[,1],col=colors_errors,pch=20,type="p",xlab="Test set",ylab="Probabilities of being Cluster 1",
+     main="Probabilities of being Cluster 1 with QDA")
+abline(h=0.5)
+```
+
+
+### NAIVE BAYES
+The Naive Bayes is very similar to the QDA, but a simplification is performed: the predictors are assumed to be independent, thus the covariance matrixes are null and there is no need to estimate them.  
+This method sometimes has good performance only if applied after the PCA reduction.  
+
+The model is trained with the training set.
+
+```{r}
+#install.packages("naivebayes")
+library(naivebayes)
+naivebayes_tr <- gaussian_naive_bayes(X_tr,Y_tr)
+```
+
+The estimated prior probabilities for the two groups are:  
+
+```{r}
+naivebayes_tr$prior
+```
+
+The estimated standard deviation vectors are:  
+
+```{r}
+t(naivebayes_tr$params$sd)
+```
+The model is then used to predict the observations of the test set: 
+
+```{r}
+naivebayes_test <- predict(naivebayes_tr,newdata=X_test,type="prob")
+naivebayes_Y_test <- c("1","2")[apply(naivebayes_test,1,which.max)]
+```
+
+The confusion matrix is then displayed to check how many misclassifications have been done for each group.
+
+```{r}
+nb_tab <- table(Y_test,naivebayes_Y_test)
+table(Y_test,naivebayes_Y_test)
+```
+Here the result is still worse than the one of LDA.
+
+```{r}
+T1R <- nb_tab[1,1]/(nb_tab[1,1]+nb_tab[1,2])
+T2R <- nb_tab[2,2]/(nb_tab[2,1]+nb_tab[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+```{r}
+naivebayes_TER <- mean(Y_test!=naivebayes_Y_test)
+```
+
+```{r}
+print(paste0("The TER with the Naive Bayes algorithm is: ", round(naivebayes_TER,2)))
+```
+The TER is the double of the one for LDA.  
+
+The posterior probabilities of the classifications made with the test sample are given, and the plot of the probabilities is displayed.
+
+```{r}
+prob_naivebayes_Y_test <- naivebayes_test
+colors_errors <- c(color_3,color_1)[1*(Y_test==naivebayes_Y_test)+1]
+```
+
+```{r}
+plot(1:n_test,prob_naivebayes_Y_test[,1],col=colors_errors,pch=20,type="p",xlab="Test set",ylab="Probabilities of being Cluster 1",
+     main="Probabilities of being Cluster 1 with Naive Bayes")
+abline(h=0.5)
+```
+
+##6.2 OTHER MODELS - KNN, LOGISTIC REGRESSION  
+
+### K-NEAREST NEIGHBORS (KNN)  
+This is one of the most widely used algorithms for supervised learning.  
+The idea is very simple: to predict the class of the new observation basing on the distance between the new observation and the rest of the observations. Then, the new observation is assigned to the class with higher probability.  
+Although the idea is very simple, this algorithm suffers:  
+- elapsed time (all of the distances must be processed)  
+- large storage requirements  
+- noise sensitive
+- redundant and irrelevant attributes sensitive  
+
+The first step to implement the KNN algorithm is to standardize all the values, because the method is based on the distances between the observations.  
+
+```{r}
+library(class)
+X_tr_std <- scale(X_tr)
+X_test_std <- scale(X_test)
+```
+
+The parameter K, representing the number of neighbors, must be tuned before running the algorithm.  
+In this case, a loop with K from 3 to 50 is performed, and the LOOCV error is checked.  
+
+```{r}
+LER <- matrix(NA,nrow=50,ncol=1)
+for (i in 3 : 50){
+  #print(i)
+  knn_output <- knn.cv(X_tr_std,Y_tr,k=i)
+  LER[i] <- 1 - mean(knn_output==Y_tr)
+}
+```
+
+The optimal K is then checked with the elbow method. In this case it is difficult to detect the exact elbow, but K=9 seems quite reasonable.
+
+```{r}
+plot(1:50,LER,pch=20,col=color_1,type="b",xlab="K",ylab="LER",main="LER vs Number of Neighbors K")
+K=9
+abline(v = K)
+text(75, 2.6, paste("Optimal K:",K))
+
+```
+
+Once the optimal K is selected, the algorithm can be run.
+
+```{r}
+knn_Y_test <- knn(X_tr_std,X_test_std,Y_tr,k=K,prob=TRUE)
+```
+
+The number of observations classified for each group are:  
+
+```{r}
+summary(knn_Y_test)
+```
+
+While the confusion matrix is:  
+
+```{r}
+knn_tab <- table(Y_test,knn_Y_test)
+table(Y_test,knn_Y_test)
+```
+The result is quite similar to the one of Naive Bayes, but the false rate for cluster 2 has been improved.  
+
+```{r}
+T1R <- knn_tab[1,1]/(knn_tab[1,1]+knn_tab[1,2])
+T2R <- knn_tab[2,2]/(knn_tab[2,1]+knn_tab[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+The Test Error Rate is then computed:  
+
+```{r}
+knn_TER <- mean(Y_test!=knn_Y_test)
+```
+
+```{r}
+print(paste0("The TER with the KNN algorithm is: ", round(knn_TER,2)))
+```
+The posterior probabilities of the classifications made with the test sample are given, and the plot of the probabilities is displayed.
+
+```{r}
+prob_knn_Y_test <- attributes(knn_Y_test)$prob
+```
+
+```{r}
+colors_errors <- c(color_3,color_1)[1*(Y_test==knn_Y_test)+1]
+plot(1:n_test,prob_knn_Y_test,col=colors_errors,pch=20,type="p",xlab="Test sample",ylab="Probabilities of being Cluster 1", main="Probabilities of being Cluster 1 with KNN")
+```
+
+
+### LOGISTIC REGRESSION
+The idea of the logistic regression is to build a linear relation on the probabilities, and not directly on the categorical variables.  
+The regression line is here transformed into a smoother function which is bounded from 0 to 1.  
+For logistic regression, the expectation corresponds to the logistic function, which depends on the linear function of the predictors, also called log-odds function.  
+The predictors are estimated in the training set by means of the MLE. Then, the test set is used to give a score to the model.  
+
+The multinom function is run. This returns the prediction of the coefficients and their standard error.  
+
+```{r}
+library(nnet)
+logreg_tr <- multinom(Y_tr ~ .,data=as.data.frame(X_tr))
+```
+In the table below, the estimates of the coefficients $\beta$ and their standard errors are given.
+
+```{r}
+summary(logreg_tr)
+```
+The influence of the $\beta$ coefficients are checked with the t-test, and the results are sorted in decreasing order.
+
+```{r}
+t_test_train <- summary(logreg_tr)$coefficients/summary(logreg_tr)$standard.errors
+sort(abs(t_test_train),decreasing=TRUE)
+```
+On the one hand, the most important attributes are by far beauty and age, as expected. 
+On the other hand, the least influent ones are skin_dark_circle and n_followers, but all the attributes except the two most important ones have similar scores.  
+
+The logistic regression model just found is then applied to the test set:
+
+```{r}
+logreg_Y_test <- predict(logreg_tr,newdata=as.data.frame(X_test))
+```
+
+The confusion matrix is then given.
+
+```{r}
+log_tab <- table(Y_test,logreg_Y_test)
+table(Y_test,logreg_Y_test)
+```
+The result is very good, and it's similar to the one of LDA. The false rate of cluster 1 is even smaller.  
+
+```{r}
+T1R <- log_tab[1,1]/(log_tab[1,1]+log_tab[1,2])
+T2R <- log_tab[2,2]/(log_tab[2,1]+log_tab[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+The TER is computed:
+
+```{r}
+logreg_TER <- mean(Y_test!=logreg_Y_test)
+```
+
+```{r}
+print(paste0("The TER with the Logistic Regression is: ", round(logreg_TER,2)))
+```
+The posterior probabilities of the classifications made with the test sample are given, and the plot of the probabilities is displayed.
+
+```{r}
+prob_logreg_test <- predict(logreg_tr,newdata=X_test,type ="probs")
+```
+
+```{r}
+colors_errors <- c(color_3,color_1)[1*(Y_test==logreg_Y_test)+1]
+plot(1:n_test,prob_logreg_test,col=colors_errors,pch=20,type="p",xlab="Test sample",ylab="Winning probabilities", main="Winning probabilities with KNN")
+```
+
+```{r}
+step_logreg_tr <- step(logreg_tr,direction="backward",trace=0)
+step_logreg_tr
+```
+Only the attribute "skin_dark_circle" is excluded.
+
+```{r}
+steplogreg_Y_test <- predict(step_logreg_tr,newdata=as.data.frame(X_test))
+```
+
+The confusion matrix is then given.
+
+```{r}
+log_tab2 <- table(Y_test,steplogreg_Y_test)
+table(Y_test,steplogreg_Y_test)
+```
+The result is almost the same as the one with all the attributes (there is just one misclassification less).
+
+```{r}
+T1R <- log_tab2[1,1]/(log_tab2[1,1]+log_tab2[1,2])
+T2R <- log_tab2[2,2]/(log_tab2[2,1]+log_tab2[2,2])
+```
+```{r}
+print(paste0("The true rate for clusters 1 and 2 are: ", round(T1R,2), " and ", round(T2R,2)))
+```
+
+
+As a conclusion, a plot of the TER for each method is given:  
+```{r}
+TER <- c(lda_TER, qda_TER, naivebayes_TER, knn_TER, logreg_TER)
+x_ax <- seq(1:5)
+label <- c("LDA", "QDA", "Naive Bayes", "KNN", "Logistic Reg.")
+plot(x_ax,TER, xaxt="n", xlab="Supervised classification method")
+axis(1, at=1:5, labels=label)
+index_best_TER <- which.min(TER)
+points(x_ax[index_best_TER], TER[index_best_TER], col="red", pch=19)
+```
+The Logistic Regression is the method that returns the best TER for this supervised classification problem.
+
+
