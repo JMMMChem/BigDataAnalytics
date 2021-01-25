@@ -1,0 +1,606 @@
+---
+title: "Assignment Predictive Modeling"
+subtitle: |
+  Group 9
+author:
+  - Jose Maria Martínez Marín (100443343)  
+  - Francesco Mora (100439601)  
+  - Ignacio Soria Ramírez (100443660)  
+output:
+  html_document: default
+  pdf_document: default
+---
+# Exercise A.3
+### For the challenger.txt dataset, do the following:  
+
+**a) Do a Poisson regression of the total number of incidents, nfails.field + nfails.nozzle, on temp. Interpret the regression. Are the effect of temp significant with alpha=0.01?**  
+Some preliminary operations: 
+
+```{r}
+rm(list = ls()); 
+gc();
+
+library(MASS)
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+color_4 <- "darkorchid4"
+color_5 <- "aquamarine"
+color_6 <- "darkslategrey"
+color_7 <- "chocolate3"
+color_8 <- "deeppink"
+color_9 <- "darkgoldenrod"
+color_10 <- "black"
+```
+
+The dataset is loaded: 
+```{r}
+Original <- read.delim(file="challenger.txt", header=TRUE, sep="\t")
+challenger <- Original
+attach(challenger)
+```
+
+A new column is created to sum the two contributes nfails.field and nfails.nozzle.  
+Then a plot is done to visualize the number of incidents versus the temperature.
+
+```{r}
+challenger$tot_inc = challenger$nfails.field + challenger$nfails.nozzle
+plot(tot_inc ~ temp, data=challenger)
+```
+
+A Poisson regression is done with just one attribute: the temperature.
+
+```{r}
+pois1 <- glm(tot_inc ~ temp, data = challenger, family = poisson)
+summary(pois1)
+```
+
+Both the coefficients are significant for alpha=0.01
+
+```{r}
+exp(pois1$coefficients)
+```
+
+18.98 is the average number of incidents when the temperature is 0.  
+If the temperature increases 1°C, the number of incidents decreases by a factor of 0.86.
+
+**b) Plot the data and the fitted Poisson regression curve**  
+  
+The Poisson regression can be plotted calculating the exponential function of the log-odds.
+
+```{r}
+xaxis <- seq(-2, 30, l = 100)
+z <- pois1$coefficients[1] + pois1$coefficients[2]*xaxis
+plot(tot_inc ~ temp, data=challenger, xlab="Temperature [°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
+lines(xaxis, exp(z), col = color_2)
+legend(-3,2,legend="Poisson linear",col=color_2, lty=1, cex=0.9)
+```
+
+**c) Predict the expected number of incidents at temperatures -0.6 and 11.67**  
+
+The prediction for specific values of temp can be calculated by the *predict* function:  
+
+```{r}
+new_data <- data.frame(temp=c(-0.6,11.67))
+inc <- predict(pois1, newdata=new_data, type="response")
+print(paste0("The prediction for temp=-0.6 is: ", inc[1]))
+print(paste0("The prediction for temp=11.67 is: ", inc[2]))
+```
+  
+**d) What are the confidence intervals for the expected number of incidents at the previous temperatures? Draw the confidence intervals curves onto the plot of step A**  
+
+A function to calculate the confidence intervals of a given Poisson regression can be written.  
+This function takes has an input the result of the regression, and the x values to be checked. In this case, the significance level is set to 0.99.
+
+```{r}
+predictCIsPoisson <- function(object, newdata, level = 0.99) {
+  
+  prediction <- predict(object = object, newdata = newdata, se.fit = TRUE)
+  za <- qnorm(p = (1 - level) / 2)
+  lwr <- prediction$fit + za * prediction$se.fit
+  upr <- prediction$fit - za * prediction$se.fit
+  fit <- exp(prediction$fit)
+  lwr <- exp(lwr)
+  upr <- exp(upr)
+  tot <- cbind(fit, lwr, upr)
+  colnames(tot) <- c("fit", "lwr", "upr")
+  return(tot)
+}
+```
+
+``` {r}
+CI <- predictCIsPoisson(pois1,newdata=new_data)
+```
+
+``` {r}
+print(paste0("The confidence interval for temp=-0.6 is between ", round(CI[1,2],2)," and ", round(CI[1,3],2)))
+```
+```{r}
+print(paste0("The confidence interval for temp=11.67 is between ", round(CI[2,2],2)," and ", round(CI[2,3],2)))
+```
+
+It is clear that the lower the temperature, the higher the uncertainty.  
+The confidence interval for T=-0.6°C is huge, while the one for T=11.67°C is more reasonable.  
+  
+  
+The confidence interval is then plot:
+
+``` {r}
+new_data2 <- data.frame(temp=seq(-2, 30, l = 100))
+matrix <- predictCIsPoisson(pois1,newdata=new_data2)
+fittedval <- matrix[,1]
+lwrCI <- matrix[,2]
+uprCI <- matrix[,3]
+```
+
+``` {r}
+plot(tot_inc ~ temp, data=challenger, xlab="Temperature [°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
+lines(xaxis, exp(z), col = color_2)
+legend(-3,2,legend="Poisson linear",col=color_2, lty=1, cex=0.9)
+lines(xaxis, lwrCI, lty='dashed', col = color_3)
+lines(xaxis, uprCI, lty='dashed', col = color_3)
+polygon(c(xaxis,rev(xaxis)),c(lwrCI,rev(uprCI)),col = adjustcolor(color_3,alpha.f=0.2) , border = NA)
+```
+
+**e) Can you improve the explanation of nfails.field + nfails.nozzle by using a polynomial model in temp? Explore and comment on your results**  
+
+Two more complex models are built, and the results are compared with the BIC.  
+The first additional model has the first and the second order terms for the temperature.
+
+``` {r}
+pois2 <- glm(tot_inc ~ temp + I(temp^2), data = challenger, family = poisson)
+z2 <- pois2$coefficients[1] + pois2$coefficients[2]*xaxis + pois2$coefficients[3]*(xaxis^2)
+plot(tot_inc ~ temp, data=challenger, xlab="Temperature [°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
+lines(xaxis, exp(z), col = color_2)
+legend(-3,2,legend="Poisson linear",col=color_2, lty=1, cex=0.9)
+lines(xaxis, lwrCI, lty='dashed', col = color_3)
+lines(xaxis, uprCI, lty='dashed', col = color_3)
+polygon(c(xaxis,rev(xaxis)),c(lwrCI,rev(uprCI)),col = adjustcolor(color_3,alpha.f=0.2) , border = NA)
+lines(xaxis, exp(z2), lty='dotted',col = color_4)
+legend(-3,1.3,legend="Poisson quadratic",col=color_4, lty='dotted', cex=0.9)
+summary(pois2)
+```
+
+The support of the new curve doesn't seem to give any particular added value.  
+  
+The third order term is then added to make the model even more complex:
+
+``` {r}
+pois3 <- glm(tot_inc ~ temp + I(temp^2) + I(temp^3), data = challenger, family = poisson)
+z3 <- pois3$coefficients[1] + pois3$coefficients[2]*xaxis + pois3$coefficients[3]*(xaxis^2) + pois3$coefficients[4]*(xaxis^3)
+plot(tot_inc ~ temp, data=challenger, xlab="Temperature [°C]", ylab="Incidents", main="Poisson Regression of Incidents VS Temperature", xlim=c(-2,30))
+lines(xaxis, exp(z), col = color_2)
+legend(-3,2,legend="Poisson linear",col=color_2, lty=1, cex=0.9)
+lines(xaxis, lwrCI, lty='dashed', col = color_3)
+lines(xaxis, uprCI, lty='dashed', col = color_3)
+polygon(c(xaxis,rev(xaxis)),c(lwrCI,rev(uprCI)),col = adjustcolor(color_3,alpha.f=0.2) , border = NA)
+lines(xaxis, exp(z2), lty='dotted',col = color_4)
+legend(-3,1.3,legend="Poisson quadratic",col=color_4, lty='dotted', cex=0.9)
+lines(xaxis, exp(z3), lty='dotted',col = color_7)
+legend(-3,0.6,legend="Poisson cubic",col=color_7, lty='dotted', cex=0.9)
+summary(pois3)
+```
+
+This model looks to complex: the memorization of the given data is high, but it's not able to generalize with new data.  
+  
+The three models are compared with the BIC:
+
+``` {r}
+BIC(pois1,pois2,pois3)
+```
+
+The best model is pois1 because it has the minimum BIC.
+
+\newpage
+
+# Exercise B.4
+
+### Construct and validate population confidence sets for the conditional response in simple binomial regression. That is, investigate which is the smallest set $I_{x, \alpha}$, such that $P[Y \in I_{x,\alpha}|X = x] \geq 1 − \alpha$ for $Y |X = x \sim B(N, logistic(\beta_{0} + \beta_{1}x))$. Recall that Y is discrete, the reason why $I_{x,\alpha}$ is a set and not an interval. Consider $N = 20$, $(\beta_{0}, \beta_{1}) = (1, 2)$, and $X \sim \mathcal{N}(0, 1)$.  
+
+
+**1. Derive the expression for the smallest set $I_{x,\alpha}$ that contains a new observation $Y |X = x$ with, at least, 90% confidence**  
+
+In the binomial regression model, the expectation is computed as it follows
+
+$$E[Y|X=x]=N·logistic(\eta)=\frac{N}{e^{-\eta}+1}$$
+
+and the conditional probability function
+
+$$P(Y=y|X=x)= {N\choose y}E[Y=y|X=x]^y(1-E[Y=y|X=x])^{N-y}$$
+
+In this case, $\eta = \beta_0 + \beta_1 x = 1+2x$, so
+
+$$E[Y|X=x]=\frac{20}{e^{-1-2x}+1}$$
+
+and the goal is to find the population confidence sets, i.e., to find the smallest set $I_{x,\alpha} = \{y_1, y_2, ..., y_k\}$ such that $P[Y \in I_{x,\alpha}|X = x] \geq 1 − \alpha$ for $90\%$ of confidence, i.e., $\alpha = 0.1$. 
+
+This inequality can be further developed
+
+$$P[Y \in I_{x,\alpha}|X = x] = P[Y =y_1|X = x] + ... + P[Y =y_n|X = x] \geq 1 − \alpha$$
+
+such that
+
+$$P[Y =y_1|X = x] \geq P[Y =y_2|X = x] \geq... \geq P[Y =y_k|X = x]$$
+
+and finally
+
+$$P[Y \in I_{x,\alpha}|X = x]=\sum_i^k{{N\choose y_i}E[Y=y_i|X=x]^{y_i}(1-E[Y=y_i|X=x])^{N-y_i }}\geq 1 − \alpha$$
+
+if it is considered that the set $I_{x,\alpha}$ contains $k$ elements. 
+
+The key point is to order the elements $y_i$ of the set by their probability functions, in seek of a set whose P does not reach $1-\alpha = 0.9$.
+
+**2. Implement in R a function computing that confidence set, for any x**  
+
+The parameters are set as in the description of the exercise: 
+```{r}
+set.seed(123)
+size <- 50
+N <- 20
+level=0.90
+```
+
+Two functions are written: the first one, confset, calculates and plots the confidence set for a set of values of the variable $x$.
+The function takes three input values:  
+- the general model  
+- the x values for the prediction  
+- the x values that we want to check  
+The $\alpha$ value is set to 0.9 in this case.
+
+```{r}
+confset <- function(object, newdata, x_check, level=0.90) {
+  pred_ <- predict(object=object, newdata=newdata, se.fit=TRUE)
+  z <- qnorm(p = (1 - level) / 2)
+  lwr_ <- pred_$fit + z * pred_$se.fit
+  upr_ <- pred_$fit - z * pred_$se.fit
+  upr_ <- N/(1+exp(-upr_))
+  lwr_ <- N/(1+exp(-lwr_))
+  upr_floor_ <- floor(upr_)
+  lwr_ceil_ <- ceiling(lwr_)
+  fl_ceil_ <- cbind(lwr_ceil_,upr_floor_)
+  plot(x,y)
+  for (j in x_check) {
+    aaa <- fl_ceil_[j,1]:fl_ceil_[j,2]
+    for (i in aaa) {
+      points(x_vect[j],i, col="green", pch=17)
+    }
+  }
+  print("The confidence sets for the given x are all the integers between: ")
+  return(fl_ceil_[x_check,1:2])
+}
+```
+
+The second function confset2, which is similar, returns the confidence set of an individual x without any plot:
+
+```{r}
+confset2 <- function(object, x, level=0.90) {
+  pred_ <- predict(object=object, newdata=data.frame(x = x), se.fit=TRUE)
+  z <- qnorm(p = (1 - level) / 2)
+  lwr_ <- pred_$fit + z * pred_$se.fit
+  upr_ <- pred_$fit - z * pred_$se.fit
+  upr_ <- N/(1+exp(-upr_))
+  lwr_ <- N/(1+exp(-lwr_))
+  upr_floor_ <- floor(upr_)
+  lwr_ceil_ <- ceiling(lwr_)
+  fl_ceil_ <-  seq(lwr_ceil_, upr_floor_, by=1)
+  return(fl_ceil_)
+}
+```
+
+**3.-4. Plot the population binomial regression curve and these confidence sets for several values of x.**  
+**What are your insights?**  
+**In the previous plot, overlay a sample generated from the model to graphically evaluate the correctness of the derivation and implementation in Steps 1–2**  
+
+First, random data are generated following the indication of the exercise:  
+
+```{r}
+set.seed(123)
+x <- rnorm(size, 0, sd = 1)
+y <- 1 + 2 * x
+y <- rbinom(size, N, prob = 1 / (1 + exp(-y)))
+df <- data.frame(x = x, y=y)
+plot(x,y)
+df$prop <- df$y/N
+```
+
+A binomial regression model is then fitted with the glm function.
+
+```{r}
+df$y <- as.factor(df$y)
+bin <- glm(prop ~ x, data = df, family = "binomial")
+summary(bin)
+```
+
+Please note that the coefficients $\beta_{0}$ and $\beta_{1}$ are very close to the ones that generated the data.  
+
+The fitted line is than plotted on the graph.
+
+```{r}
+x_vect <- seq(-3, 3, l = 100)
+eta <- bin$coefficients[1] + bin$coefficients[2]*x_vect
+prediction <- N/(1+exp(-eta))
+plot(x,y)
+lines(x_vect,prediction)
+```
+
+The function predict returns the standard errors of the coefficients (se.fit).   Starting from these standard errors, the confidence intervals are built manually.
+
+```{r}
+newdata <- data.frame(x = x_vect)
+pred <- predict(bin, newdata = newdata, se.fit=TRUE)
+za <- qnorm(p = (1 - level) / 2)
+lwr <- pred$fit + za * pred$se.fit
+upr <- pred$fit - za * pred$se.fit
+upr <- N/(1+exp(-upr))
+lwr <- N/(1+exp(-lwr))
+plot(x,y)
+lines(x_vect,upr, lty="dashed", col="red")
+lines(x_vect,lwr, lty="dashed", col="red")
+```
+
+The confidence intervals are functions, and as functions they can take any continuous value.  
+But in a binomial experiment, $Y$ can take only discrete values so only the integer values inside the confidence interval are taken.  
+The $x$ for which the confidence set are calculated are -1.24, -0.33 and 1,78.
+
+```{r}
+x_to_check <- c(30,45,80)
+upr_floor <- floor(upr)
+lwr_ceil <- ceiling(lwr)
+fl_ceil <- cbind(lwr_ceil,upr_floor)
+confset(bin,newdata,x_to_check)
+lines(x_vect,upr, lty="dashed", col="red")
+lines(x_vect,lwr, lty="dashed", col="red")
+```
+
+It can be seen that in some portions of the graph, the confidence set is enough wide to receive several values.  
+In other cases, like in the right tail, for some points there is only one $y$ inside the confidence set, or even zero, depending on the number of observations and on $\alpha$.  
+
+**5. Validate the results obtained in Steps 1–2 by Monte Carlo. Evaluate if a new observation $Y |X = x$ belongs to the confidence set with the prescribed 90% confidence, for $x = −1, 0.25, 2$. Use $M = 1000$ Monte Carlo samples**  
+
+First the parameters are set and the results matrix is initialized.
+
+```{r}
+x_simulated <- c(-1, 0.25, 2)
+n_simulations = 1000
+sim_conf_interval <- matrix(0,length(x_simulated),1)
+```
+
+For each $x$, a for loop generates 1000 random observations following the same binomial distribution.  Then, it is checked how many of these observations are inside the confidence set calculated with the confset2 function.
+
+```{r}
+for(i in 1:length(x_simulated)) {
+  confint_for_x <- confset2(bin, x_simulated[i])
+  inside_interval <- matrix(0,n_simulations,1)
+  y_trial <- 1 + 2 * x_simulated[i]
+  
+  for (j in 1:n_simulations) {
+    y_trial_rand <- rbinom(1, N, prob = 1 / (1 + exp(-y_trial)))
+    if (is.element(y_trial_rand, confint_for_x)) {
+      inside_interval[j] <- 1
+    }
+  }
+
+  sim_conf_interval[i] <- 100*sum(inside_interval)/n_simulations
+}
+
+for(i in 1:length(x_simulated)) {
+  print(paste0("Simulated effectiveness of confidence set ",sim_conf_interval[i],"% for x=",x_simulated[i]))
+}
+```
+
+In the case of $x=-1$, where the confidence set is large enough, the number of observations inside the confidence set is very close to 0.9.  
+The narrower the confidence set, the lower the proportion of observations generated inside the confidence set.  
+This can be seen as a consequence of considering only discrete values for $Y$.
+
+
+\newpage
+
+# Exercise C.7
+### Implement a variant of the lasso part (not AIC, BIC nor LOOCV) of the simulation study behind Figure 4.5:
+
+
+**(1,2,3) - Variable Selection with Lasso**
+
+In order to simplify the coding, a large function will be defined named **"prob_true_model"** which will compute the probability of selecting the true model with Lasso variable selection given several parameters.
+
+It will receive as input:
+
+* The sample size of the randomly generated data (n and m)  
+* The number of Monte Carlo simulations   
+* The number of folds to be used in the Lasso variable selection  
+
+It will return as output:  
+
+* A number between 0 and 1 corresponding to the proportion of simulations in which the variable selection selected only the correct predictors  
+
+
+Some basic parameters are defined before the function:
+
+```{r}
+set.seed(123)
+library(Matrix)
+library(glmnet)
+library(ggplot2)
+
+l <- 4 #sample size (n = 2^l)
+m <- 5 #predictors
+k <- 4 #folds for cross validation
+iter <- 20 #number of iterations)
+```
+
+The structure of the function is the following:  
+
+1. Variables related with the true model
+  + Initialise variable "true_mod_found" with zeroes. This variable will be updated at each iteration with a 1 if the true model is selected   
+  + Define variable "beta" with the true model  
+  + Define variable "true_model" with the shape of this model (1 represents the predictor is used in the model)
+
+2. Iteration loop - Monte Carlo Simulation
+  + In first place generate the random sample corresponding to the current simulation
+  + The matrix of predictors and the vector of errors are randomly generated in a normal distribution with mean 0 and sd 1 as stated in 3.4
+  + The vector of responses is generated by multiplying the matrix of predictors with the betas and adding up the random errors
+  + A Lasso regression is fitted with the corresponding k folds given to the function as input
+  + The lambda used for this fit is the one corresponding to the minimum "MSE" as stated in the problem
+  + Variable "selPreds" then stores a logical list with the predictors selected, used to create variable "model" with 1s for the selected predictors
+  + Variable "model" is then compared with variable "true_model". It is checked if the correct (and only the correct) predictors where chosen by Lasso.
+  + If the true model is selected by Lasso, the value of "true_mod_found" is updated to 1 for the position of the current iteration  
+  
+3. Probability of True Model  
+  + After all simulations have been completed, the binary values in the list "true_model" indicate how many times the true model was selected
+  + By adding them and dividing by the number of iterations a probability is calculated and returned
+
+
+```{r}
+prob_true_model <- function(l,m,iter,k) {
+  ###------1------VARIABLES TO DEFINE TRUE MODEL
+  #Initialise vector in which we will store if the selected model was the true model
+  true_mod_found <- matrix(0,iter,1)
+  
+  #sample size
+  n <- round(2^l, digits = 0) 
+  
+  #True model betas and shape
+  beta <-  c(0.5, 1, 1, 0, 0, 0)
+  true_model <- matrix(c(1, 1, 0, 0, 0), nrow = 5, ncol = 1)
+  
+  ###------2------SIMULATION LOOP
+  for(i in 1:iter) {
+    
+    #Generate random data sample
+    x <- matrix(rnorm(n*m,mean=0,sd=1), n, m)  #X matrix without intercept
+    x1 <- matrix(1, n, 1) #column of ones
+    x_with_intetrcept <- cbind(x1,x) #matrix with ones and Xs
+    eps <-  matrix(rnorm(n,mean=0,sd=1), n, 1) #random error
+    
+    y <- x_with_intetrcept%*%beta+eps #response variable
+    
+    #Create a 4-fold cross validation lasso fit
+    kcvLasso <- cv.glmnet(x = x, y = y, alpha = 1, nfolds = k, grouped=FALSE)
+    
+    modLassoCV <- kcvLasso$glmnet.fit
+    
+    #Select predictors using only the nonzero betas regressed and with the minimum lambda corresponding to the cross validation
+    selPreds <- predict(modLassoCV, type = "coefficients",s=kcvLasso$lambda.min)[-1, ] != 0
+    
+    #Generate a vector of the fitted model shape (1-> predictor selected, 0-> predictor not selected)
+    model <- matrix(1, 5, 1) #vector of ones
+    model <- model*selPreds #predictors not selected are transformed to zero
+    
+    check <- all.equal(true_model,model)
+    check <- identical(TRUE,check)
+    if (check == TRUE) {
+      true_mod_found[i] <- 1
+    }
+    
+  }
+  ###------3------PROBABILITY OF SELECTED MODEL
+  
+  probability = sum(true_mod_found)/iter
+  return(probability)
+}
+
+```
+
+**(4) - Monte Carlo Simulations**
+
+200 simulations are performed in order to calculate the probability of selecting the true model for several numbers of folds and sample sizes.
+
+Performing tests, it can be seen that independently of the value chosen for k, for larger sample sizes, there is a larger chance of arriving at the correct model although a large probability above 0.3 can never be achieved.
+
+In these examples, there is a probability of 0.045 of selecting the true model for a sample size of n=2^2=4 and 0.17 for a sample size of n=2^4=16
+```{r}
+prob_true_model(2,m,200,3) #3 folds, sample size 4
+```
+```{r}
+prob_true_model(4,m,200,3) #3 folds, sample size 16
+```
+
+**(5) - Consistency with Sample Size**
+
+In the following section, the number of folds in the cross validation is fixed to 3 and the size of the sample is increased in a logarithmic scale. The model was evaluated for sample sizes ranging from l=3 to l=10, where n=2^l
+
+It can be observed that the model for variable is not consistent as with large sample sizes it tends to a probability of 30% of selecting the correct model.
+```{r}
+sample_sizes = seq(2, 10, by=1) #define a list of sample sizes
+prob_3_folds <- matrix(0,length(sample_sizes),1) #initialise a list with probabilities of 0
+
+#Compute the probability of finding the true model for a fixed number of validation folds of 3
+for (i in 1:length(sample_sizes)) {
+  prob_3_folds[i] = prob_true_model(sample_sizes[i],m,200,3) #probability for sample size i (2^2, 2^3, ..., 2^10), 200 simulations, 3 folds
+}
+
+plot(sample_sizes,prob_3_folds, ylim=c(0,0.6))
+lines(sample_sizes,prob_3_folds)
+```
+
+**(6) - Effect of Number of Folds**
+
+The code in the following section can take up to 10 minutes to compute, therefore the RDATA workspace has been included
+
+In this section, the consistency of the model will be evaluated using the following folds:  
+
+* k = n/8  
+* k = n/4  
+* k = n/2  
+* k = n  
+
+
+It can be concluded that, as expected, the model is not consistent. It is an expected result as the minimum lambda is being chosen in each Lasso selection, therefore applying a small penalty for extra predictors which results in more predictors than necessary being selected. The models converged at a probability of 0.3.
+
+The relationship between the number of folds and the consistency of the model can not be clearly identified from the plot. It can be concluded that independently of the number of folds, the model will be inconsistent and will converge to the same value of around 30%, with no significant effect on the speed of convergence.
+```{r}
+sample_sizes_2 = seq(3, 10, by=1) #list of sample sizes to test
+folds_div <- c(2,1) #list of values diving n for k fold cross validation (n, n/2)
+folds_text <- c("n/2", "n") #text to be stored in the results
+ 
+results <- data.frame("l"=integer(), "n"=integer(), "k"=character(), "Probability_true_model"=double()) #create dataframe where results will be stored
+ 
+#THIS TAKES AROUND 10 MINS
+#Iterate for k = (n, n/2) and all sample sizes
+for (j in 1:length(folds_div)){
+  for (i in 1:length(sample_sizes_2)) {
+      #print(paste0("sample size ", i," of ",length(sample_sizes_2), ", folds ",j," of ", length(folds_div)))
+      probability <- prob_true_model(sample_sizes_2[i],5,200,(2^sample_sizes_2[i])/folds_div[j]) #probability for sample size i (2^2, 2^3, ..., 2^10), 200 simulations, n/4 folds
+          
+      results[nrow(results)+1,] <- list(sample_sizes_2[i],2^sample_sizes_2[i],folds_text[j],probability) #store the results
+  }
+}
+
+#Do k=n/4 and k=n/8 separately as some k values result in less than 3 folds for small sample sizes
+
+#k=n/4
+sample_sizes_4 = seq(4, 10, by=1) #define another for a minimum sample of 8
+
+for (i in 1:length(sample_sizes_4)) {
+  #print(paste0("Step ", i," of ",length(sample_sizes_4)))
+  probability <- prob_true_model(sample_sizes_4[i],5,200,(2^sample_sizes_4[i])/4) #probability for sample size i (2^2, 2^3, ..., 2^10), 200 simulations, n/4 folds
+  
+  results[nrow(results)+1,] <- list(sample_sizes_4[i],2^sample_sizes_4[i],"n/4",probability) #store the results
+}
+
+
+#k=n/8
+sample_sizes_8 = seq(5, 10, by=1) #define another for a minimum sample of 8
+
+for (i in 1:length(sample_sizes_8)) {
+  #print(paste0("Step ", i," of ",length(sample_sizes_8)))
+  probability <- prob_true_model(sample_sizes_8[i],5,200,(2^sample_sizes_8[i])/8) #probability for sample size i (2^2, 2^3, ..., 2^10), 200 simulations, n/4 folds
+  
+  results[nrow(results)+1,] <- list(sample_sizes_8[i],2^sample_sizes_8[i],"n/8",probability) #store the results
+}
+
+
+```
+
+```{r}
+#plot the results
+
+plot(results$l[results$k=="n"], results$Probability_true_model[results$k=="n"],main="Consistency of Lasso Selection for Different k Cross Validations", ylab="Probability of selecting the right model", xlab = "log2 of sample size", type="l", col="blue", ylim = c(0,0.4))
+lines(results$l[results$k=="n/2"],results$Probability_true_model[results$k=="n/2"], col="red")
+lines(results$l[results$k=="n/4"],results$Probability_true_model[results$k=="n/4"], col="green")
+lines(results$l[results$k=="n/8"],results$Probability_true_model[results$k=="n/8"], col="purple")
+
+legend("topleft", c("n","n/2","n/4","n/8"), fill=c("blue","red","green","purple"))
+```
+
