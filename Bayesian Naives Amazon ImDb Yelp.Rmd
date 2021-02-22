@@ -1,0 +1,204 @@
+---
+title: "Assignment 1 Bayesian Statistics"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+**José María Martínez Marín - 100443343**
+
+**Text classification exercise using the Naive Bayes Classifier.**
+
+**You should find some data for which you can use a naive Bayes classifier (examples from the past are spam and ham emails, tweets by Donald Trump and Hilary Clinton, different types of car).  For the data set you select, you should clean the data, produce a word cloud if appropriate, divide the data into a training set and a test set and run the classifier using both frequentist estimation and Laplacian smoothing (the Bayes method).**
+
+**You should write a brief report, summarising the data and the results of the classifier and any possible problems and improvements that need to be used.**
+
+The dataset is a merge ot three datasets chosen from Kaggle ("https://www.kaggle.com/marklvl/sentiment-labelled-sentences-data-set") which contains information about ratings from users of three pages:
+
+-**IMDb** (Internet Movie Database, as its name indicates, it is a website about cinema and TV series).
+
+-**Amazon**.
+
+-**Yelp** (reviews from various companies, rated with 1-5 stars).
+
+It consists of 3000 instances, which are classified as either Positive (1) or Negative (0), and in the case of Yelp, a rating of 1 or 2 stars counts as Negative, while 4 or 5 stars accounts for a Positive review.
+
+The first step is loading the data
+
+
+```{r warning=FALSE}
+library(tidyverse)
+library(gmodels) 
+library(tm)
+library(wordcloud)
+library(e1071)
+
+datapath <- "C:/Users/Jose Maria/Dropbox/Mi PC (DESKTOP-26FICGE)/Documents/5 MASTER BIG DATA ANALYTICS/2A Bayesian learning/----ASSIGNMENT 1----"
+csv.files <- list.files(path=datapath, full.names = T, recursive = T)
+
+csv.files <- csv.files[str_detect(csv.files, "(amazon|imdb|yelp)")]
+```
+
+A function is created to create a dataset consisting on the three files from Amazon, IMDb and Yelp, and shuffling them in random order.
+
+```{r message=FALSE, warning=FALSE}
+Loading <- function(file_list) { 
+    tables <- lapply(file_list, Reading)
+    ratings <- do.call(rbind, tables)
+    
+   
+    ratings$sentiment <- factor(ratings$sentiment, levels = c(0, 1),
+                                   labels = c("Negative","Positive"))
+    
+    return(ratings)
+}
+
+Reading <- function(file_name) {
+   
+    table <- read_delim(file_name, 
+                        delim = "\t", 
+                        col_names = c("text", "sentiment"),
+                        quote = "")
+    
+    file.name <- str_split(file_name, "/", simplify = TRUE)[2]
+    table['source']  <- str_split(file.name, "_", simplify = TRUE)[1]
+        
+    return(table)
+}
+
+ratings <- Loading(csv.files)
+
+
+set.seed(1985)
+ratings <- ratings[order(runif(n=3000)),]
+```
+
+
+The next step is to prepare the corpus, an element consisting of a collection of documents.
+
+```{r}
+library(tm)
+corpus <- Corpus(VectorSource(ratings$text))
+inspect(corpus[1:10])
+```
+ 
+ 
+and cleaning it, removing numbers, punctuation signs, transforming the letters into lower case, and removing every non-content word, the so-called "stop words"
+ 
+```{r}
+cleaning <- tm_map(corpus, tolower)
+cleaning <- tm_map(cleaning, removeNumbers)
+cleaning <- tm_map(cleaning, removePunctuation)
+cleaning <- tm_map(cleaning, removeWords, stopwords("en"))
+cleaning <- tm_map(cleaning, stripWhitespace)
+inspect(cleaning[1:10])
+```
+
+The word cloud is as it follows
+
+
+```{r}
+Positive_indices <- which(ratings$sentiment == "Positive")
+Positive_indices[1:10]
+Negative_indices <- which(ratings$sentiment == "Negative")
+Negative_indices[1:10]
+library(wordcloud)
+wordcloud(cleaning[Positive_indices], min.freq=40, scale=c(3,.5))
+wordcloud(cleaning[Negative_indices], min.freq=40)
+```
+
+The most repeated words with regards to Positive ratings are:
+
+-Good
+
+-Great
+
+Other words worth mentioned are "excellent", "best" or "nice". In general, they are good, positive adjectives showing satisfaction regarding the product.
+
+On the contrary, the most repeated words with respect to the negative reviews are:
+
+-Bad
+
+-Don't
+
+-Movie
+
+The first two ones clearly have a negative connotation, while the last one shows that the most reviewed products are movies, (in fact, one of the three datasets consists only on reviews about movies). One curious fact is that the word "good" is among the most repeated ones in this Negative reviews word cloud. This is not a good indicator for the classification, since it shows positiveness, and should not be included in that group. 
+ 
+Now the dataset is going to be splited into a train and a test partitions (75% and 25% of the dataset, respectively), in order to create a Negative/Positive filter
+
+ 
+```{r}
+ratings_train <- ratings[1:2250,]
+ratings_test <- ratings[2251:3000,]
+corpus_train <- cleaning[1:2250]
+corpus_test <- cleaning[2251:3000]
+```
+ 
+Shall the frequency of terms be computed
+
+```{r}
+ratings_sparse <- DocumentTermMatrix(cleaning)
+inspect(ratings_sparse[1:10, 40:50])
+
+sparse_train <- ratings_sparse[1:2250,]
+sparse_test <- ratings_sparse[2251:3000,]
+```
+ 
+It is highly advisable to delete the terms appearing only a few times, as they do not really contribute with new useful information
+
+```{r} 
+five_times <- findFreqTerms(sparse_train, 5)
+length(five_times)
+five_times[1:10]
+```
+ 
+ 
+```{r}
+sparse_train <- DocumentTermMatrix(corpus_train, control=list(dictionary = five_times))
+sparse_test <- DocumentTermMatrix(corpus_test, control=list(dictionary = five_times))
+```
+ 
+ 
+The count info has to be converted to "Yes" and "No" info
+ 
+```{r}
+convert_count <- function(x){
+  y <- ifelse(x > 0, 1,0)
+  y <- factor(y, levels=c(0,1), labels=c("No", "Yes"))
+  y
+} 
+sparse_train <- apply(sparse_train, 2, convert_count)
+sparse_train[1:10, 40:50]
+sparse_test <- apply(sparse_test, 2, convert_count)
+sparse_test[1:10, 40:50]
+``` 
+ 
+And finally, the data is ready for the application of a Naive Bayes Classifier
+
+```{r}
+library(e1071)
+
+#Using the training data
+classifier <- naiveBayes(sparse_train, ratings_train$sentiment)
+class(classifier)
+
+#Make predictions on the test data
+predictions <- predict(classifier, newdata=sparse_test)
+table(predictions, ratings_test$sentiment)
+```
+
+There are 78 Negative instances that were predicted as Positive, whereas 103 Positive instances were predicted to be Negative. This corresponds to a $79.32\%$ and a $72.39\%$ rate of success, which are not bad results, but need to be improved. 
+
+One way to do so is with the **Laplacian Smoothing** method: from uniform **prior** distributions, obtaining the so-called *posterior** distributions, and computing the Bayesian Naive Bayes with theses uniform prior distributions.
+
+```{r}
+LaplaceClass <- naiveBayes(sparse_train, ratings_train$sentiment,laplace = 1)
+class(LaplaceClass)
+LaplacePred <- predict(LaplaceClass, newdata=sparse_test)
+table(LaplacePred, ratings_test$sentiment)
+
+```
+
+
+Only 2 instances previously regarded as Positive were correctly classified as Negative, and 5 wrongly regarded as Negative instances were correctly predicted to be Positive. That involves improvements of $0.52\%$ and $1.33\%$, to rates of success of $79.84\%$ and $73.72\%$ respectively, not a huge change, and still improvable, but slightly better than before.
