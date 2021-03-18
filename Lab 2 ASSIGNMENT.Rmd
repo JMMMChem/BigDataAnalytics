@@ -1,0 +1,419 @@
+---
+title: "Lab 2 Assignment"
+output:
+  pdf_document: default
+  html_document: default
+---
+**José María Martínez Marín 100443343**
+
+
+**Nikkei 225 Stock Market Index GARCH Analysis**
+
+In this project, the Japanese Stock Market Index NIKKEI 225 (N225) is going to be analyzed, via GARCH models.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Firstly, the data is going to be stored from Yahoo Finances
+
+```{r}
+setwd("~/5 MASTER BIG DATA ANALYTICS/2A Time series analysis and forecasting/KAREN LAB 2 ASSIGNMENT")
+
+library(quantmod) 
+library(moments)
+# Another way of getting data from yahoofinance
+getSymbols("^N225", src = "yahoo", 
+           from = "2000-01-01", to = "2021-02-26", periodicity = "daily")
+N225=N225[,6] # column 6 corresponds to "Adj Close"
+N225=na.omit(N225)
+```
+
+## Basics Statistics
+
+After loading the data, a bunch of basic statistics computations are going to be analyzed: the mean, standard deviation, kurtosis and skewness of the data, as well as the histogram.
+
+```{r}
+fun=function(data){
+  stats=c(mean(data), sd(data), min(data), 
+          max(data), skewness(data), kurtosis(data))
+  out=matrix(stats, ncol=length(stats), nrow=1)
+  colnames(out)=c("mean", "sd dev", "min", "max", "skewness", "kurtosis")
+  return(out)
+}
+fun(N225)
+hist(N225)
+```
+The value of the kurtosis is positive, therefore, there are more outliers than in the normal distribution, the distribution is leptokurtic. Moreover, the skewness is positive too, an indicator of a right-skewed data shape.
+
+## Returns
+
+
+The second step is to obtain the log returns, the log-difference of the value/price from one day to the next one, due to its statistical properties, specially its stationarity and ergodicity; and squared returns, since it might be seen as a proxy of the degree of variation of the series over time. 
+
+The log returns are defined as follows:
+
+$$y_t = ln(\frac{P_t}{P_{t-1}})$$
+with $P_t= N225_t$ the price of an asset at time index t.
+
+```{r}
+# Compunting the returns of BVSP
+ret=diff(log(N225))
+ret=ret[-1]
+# Compunting the squared returns
+ret2=ret^2 
+```
+
+ The following plot shows the series, its returns and the squared returns of the N225 Index:
+
+```{r}
+par(mfrow=c(3,1),mar=c(2,2,1,1))
+plot(N225)
+abline(v=(0:12)*260,col=4,lty=3)
+text((0:11)*260+130,max(N225)*0.9,2000+(0:12),cex=0.8)
+plot(ret)
+abline(v=(0:11)*260,col=4,lty=3)
+plot(ret2)
+abline(v=(0:11)*260,col=4,lty=3)
+```
+From the plots, it could be argued that the returns are centered around zero, and that big price changes happen in close periods (as can be seen in the squared returns plot), such as in the 2008 financial crash, as well as around 2010-2011, a phenomenon known as *volatility clustering*. Surprisingly, there is no remarkable volatility in the Covid-19 Pandemic, probably due to the fact that Asian countries have managed to control the outbrakes fairly better than European ones.
+
+
+The next step is to plot the ACF of the Returns:
+
+```{r}
+acf(ret,lag.max=60) 
+```
+
+from which no linear dependency can be found between contiguous observations. Nevertheless, there may be other kind of dependencies, as will be analyzed.
+
+## Testing ARCH Effects
+
+Prior to estimating GARCH models, finding of the effects present in the dataset is needed. The Lagrange Multiplier test for ARCH effects is to be used, to test for ARCH of order q (lags). In this case, a number of 5 lags has been used, as normally it is enough in order to capture the volatility memory.
+
+In this case, the Null and Alternative hypotheses are:
+
+$$H_0 : \gamma_1 = \gamma_2 = ... = \gamma_q = 0$$
+indicating no ARCH effects, and
+
+$$H_1 : at \quad least \quad one \quad \gamma_j \neq 0$$
+
+the null hypothesis is rejected in case the p-value is lower than $\alpha$, the level of significance.
+
+```{r}
+library(FinTS)
+library(tidyverse)
+source("arch_test.R")
+arch_test(ret, max_lag=5)
+```
+
+Recall that $\alpha$ can be $1\%$, $5\%$ or $10\%$, so for all its values and everyone of the five lags, the null hypothesis is rejected, thus statistically proving the existence of ARCH effects since the p-values are really low.
+
+## Estimating GARCH Models
+
+The fourth step is to estimate a GARCH model, by defining the number of used lags in every part, the variance equation and the distribution parameters.
+
+The models that are going to be estimated have the same number of lags and distribution assumption
+
+$$y_t = \mu + u_t, \quad \mu = ARMA(1,1), \quad u_t \sim N(0,\sigma_t^2)$$
+
+and are:
+
+-ARMA(1,1)-SGARCH(1,1): $\sigma_t^2 = \alpha_0 + \alpha_1 u_{t-1}^2+\beta_1\sigma_{t-1}^2$
+
+-ARMA(1,1)-EGARCH(1,1): $log(\sigma_t^2) = \omega + \beta ln(\sigma_{t-1}^2)  + \gamma \frac{u_{t-1}}{\sqrt{\sigma_{t-1}^2}}+\alpha\big[\frac{|u_{t-1}|}{\sqrt{\sigma_{t-1}^2}} - \sqrt{\frac{2}{\pi}}\big]$
+
+
+-ARMA(1,1)-GJRGARCH(1,1): $\sigma_t^2 = \alpha_0 + \alpha_1 u_{t-1}^2+\beta_1\sigma_{t-1}^2 + \gamma u_{t-1}^2 I_{t-1}$
+ 
+
+
+
+```{r}
+library(texreg)
+library(rugarch)
+source('garch_functs.R')
+source('estimate_garch.R')
+
+ar_lag = 1 # lag used for ar term in mean equation (0 in paper)
+ma_lag = 1 # lag used for ma term in mean equation (0 in paper)
+arch_lag = 1 # lag in arch effect (1 in paper)
+garch_lag = 1 # lag in garch effect (1 in paper)
+models_to_estimate = c('sGARCH', 'eGARCH', 'gjrGARCH') # see rugarch manual for more
+distribution_to_estimate = 'norm' # distribution used in all models
+# close all opened windows
+graphics.off()
+```
+
+```{r}
+# get all combinations of models
+df_grid = expand_grid(ar_lag,ma_lag,arch_lag,garch_lag,
+                       models_to_estimate,distribution_to_estimate)
+
+models=estimate_garch(ret, ar_lag,ma_lag,arch_lag,garch_lag,
+                models_to_estimate,distribution_to_estimate)
+
+models # check the Sign Bias Test, the asymmetry test
+
+```
+
+By looking at the Sign Bias Asymmetry Test, for which the null hypothesis for the joint test is that there is no asymmetry, it can be seen that the Sign Bias Test is statistically significant (from its t-value), hence there is asymmetry, and it is expected that when bad socioeconomic conditions hit the market, and given that the returns have negative values, volatility suffers a rough increase.
+
+```{r}
+# estimate all models
+l_args = as.list(df_grid)
+l_models = pmap(.l = l_args, .f = estimate_garch)
+
+
+# reformat models for texreg
+l_models = map(l_models, extract.rugarch, include.rsquared = FALSE)
+
+# write custom row
+custom_row = list('Variance Model' = df_grid$models_to_estimate,
+                   'Distribution' = df_grid$distribution_to_estimate)
+custom_names <- paste0('Model ', 1:length(l_models))
+
+# print to screen
+screenreg(l_models,
+          custom.gof.rows = custom_row,
+          custom.model.names = custom_names, 
+          digits = 3)
+#
+```
+Besides, when focusing on the model parameters, several conclusions derive:
+
+-The intercept $\mu$ has a positive value and is statistically significant scarcely in the SGARCH model, thus the N225 Index will probably have a positive return and an increasing trend in its value in the long period.
+
+-The AR(1) coefficient has a negative value in both models, while the MA(1) has positive values, but their values lie between 1 and -1, therefore ensuring stationarity and invertibility.
+
+-The $\alpha_1$ and $\beta_1$ coefficients are positive and their sum is lower than 1 (0.982) in the first SGARCH model, as required.
+
+-While $\alpha_1$ has really low values, $\beta_1$ has huge values in all models. From this parameters information about volatility arises, since high values show high volatility. Despite the Japanese economy usually being stable, in less than 12 years two huge crashes have whipped the world economy, moreover, a consireable part of the world economy had not recovered yet from the first crash, when the Covid-19 Pandemic one hit the markets, thus this volatility could be due to this facts.
+
+-In the asymmetric models EGARCH and GJRGARCH, $\gamma_1$ has a positive value and is statistically significant, therefore when unfavourable events hit the financial market and given that returns are negative, there is a rough increase in volatilty.
+
+Additionally, regarding the AIC and BIC, both have the lowest value in the EGARCH model, thus indicating that the most suitable model should be that one.
+
+## Finding the best GARCH specification
+
+In order to find the best model out of the three analyzed, an automatic search for parameters is going to be computed, a proper procedure, since it removes potential human bias.
+
+```{r}
+library(purrr)
+max_lag_AR = 1 # 
+max_lag_MA = 1 # 
+max_lag_ARCH = 2 # 
+max_lag_GARCH = 2 # 
+dist_to_use = c('norm', 'std') # see rugarch::ugarchspec help for more
+models_to_estimate = c('sGARCH', 'eGARCH', 'gjrGARCH') # see rugarch::rugarchspec help for more
+
+
+out = find_best_arch_model(x = ret, 
+                            type_models = models_to_estimate,
+                            dist_to_use = dist_to_use,
+                            max_lag_AR = max_lag_AR,
+                            max_lag_MA = max_lag_MA,
+                            max_lag_ARCH = max_lag_ARCH,
+                            max_lag_GARCH = max_lag_GARCH)
+tab_out = out$tab_out
+
+```
+
+```{r}
+# pivot table to long format (better for plotting)
+df_long = tidyr::pivot_longer(data = tab_out %>%
+                                 select(model_name,
+                                        type_model,
+                                        type_dist,
+                                        AIC, BIC),  cols = c('AIC', 'BIC'))
+
+models_names = unique(df_long$model_name)
+best_models = c(tab_out$model_name[which.min(tab_out$AIC)],
+                 tab_out$model_name[which.min(tab_out$BIC)])
+
+# figure out where is the best model
+df_long = df_long %>%
+  mutate(order_model = if_else(model_name %in% best_models, 
+              'Best Model', 'Not Best Model') ) %>%na.omit()
+
+# make table with best models
+df_best_models = df_long %>%
+  group_by(name) %>%
+  summarise(model_name = model_name[which.min(value)],
+            value = value[which.min(value)],
+            type_model = type_model[which.min(value)])
+```
+
+
+```{r}
+# plot results
+ggplot(df_long %>%arrange(type_model), 
+            aes(x = reorder(model_name, order(type_model)),
+                y = value, shape = type_dist, color = type_model)) + 
+  geom_point(size = 3.5, alpha = 0.65) + 
+  coord_flip()  + 
+  facet_wrap(~name, scales = 'free_x') + 
+  geom_point(data = df_best_models, 
+      mapping = aes(x = reorder(model_name, order(type_model)),y = value), 
+             color = 'blue', size = 5, shape = 8) +
+  labs(title = 'Selecting Garch Models by Fitness Criteria', 
+       subtitle = 'The best model is the one with lowest AIC or BIC (with star)',
+       x = '',
+       y = 'Value of Fitness Criteria',
+       shape = 'Type of Dist.',
+       color = 'Type of Model') + 
+  theme(legend.position = "right")
+```
+
+
+```{r}
+# estimate best garch model by BIC (used in next section)
+best_spec = ugarchspec(variance.model = list(model =  out$best_bic$type_model, 
+                                      garchOrder = c(out$best_bic$lag_arch,
+                                                out$best_bic$lag_garch)),
+                       mean.model = list(armaOrder = c(out$best_bic$lag_ar, 
+                                                       out$best_bic$lag_ma)),
+                       distribution = 'std')
+
+my_best_garch = ugarchfit(spec = best_spec, data = ret)
+
+my_best_garch # check the Robust Standard Errors
+```
+
+From the parameter search, it was found that the best model, in terms of AIC and BIC was
+
+$$ARMA(0,0) + EGARCH(2,1)$$
+
+for which its equations are defined as
+
+$$y_t = \mu + u_t, \quad u_t \sim tstud(0,\sigma_t^2)$$
+
+for the log returns (note that in this case it has been assumed that the model estimation follows a t-student distribution)
+
+$$log(\sigma_t^2) = \omega + \beta ln(\sigma_{t-1}^2)  + \gamma_1 \frac{u_{t-1}}{\sqrt{\sigma_{t-1}^2}} + \gamma_2 \frac{u_{t-2}}{\sqrt{\sigma_{t-2}^2}}+\alpha_1\big[\frac{|u_{t-1}|}{\sqrt{\sigma_{t-1}^2}} - E(|u_{t-1}|)\big] + \alpha_2\big[\frac{|u_{t-2}|}{\sqrt{\sigma_{t-2}^2}} - E(|u_{t-2}|)\big]$$
+
+## Simulating a GARCH model: forecasting scenarios
+
+The last step is, having found the best GARCH model, to simulate the future time series of return, as well as possible paths in the N225 index in future years. This is done by sequentially inputting the first value of returns in a pre-existing model and drawing samples from the residuals distribution, so that a time series of returns of any length can be built. Besides, the simulated data will have the same properties as the underlying model.
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(ggtext)
+# get price and model data
+df_prices = N225
+#cbind.data.frame(ref.date=index(N225),N225)
+my_garch = my_best_garch
+series_name = "Nikkei225"
+n_sim = 3000 
+n_days_ahead = 10*365  #Number of days ahead to simulate 
+
+
+# do simulations
+df_sim = do_sim(n_sim = n_sim, n_t = n_days_ahead, 
+                 my_garch,  df_prices = df_prices)
+
+#glimpse(df_sim)
+
+# calculate probabilities of reaching peak value
+tab_prob = df_sim %>%
+  group_by(ref_date) %>%
+  summarise(prob = mean(sim_price > max(df_prices)))
+
+df_prices=cbind.data.frame(ref.date=index(N225),N225)
+n_years_back = 4
+df_prices_temp = df_prices %>%
+  dplyr::filter(ref.date > max(ref.date) - n_years_back*365)
+
+my_garch_name <- toupper(as.character(my_garch@model$modeldesc$vmodel))
+
+```
+
+```{r}
+p1 = ggplot() + 
+  geom_line(data = df_prices_temp, 
+            aes(x = ref.date, y = df_prices_temp[,2]), color = 'black', size = 0.75)  + 
+  geom_line(data = df_sim, 
+            aes(x = ref_date, 
+                y = sim_price, 
+                group = i_sim),
+            color = 'grey', 
+            size = 0.25,
+            alpha = 0.015) +
+  geom_hline(yintercept = max(df_prices_temp[,2])) + 
+  labs(title = paste0('Price Projections of ', series_name),
+       subtitle = paste0('Total of ', n_sim, ' simulations based on a ',
+                         my_garch_name, 
+                         ' model selected by BIC'),
+       caption = 'Data from Yahoo Finance',
+       x = '',
+       y = 'Value') + 
+  ylim(c(0.75*min(df_prices_temp[,2]), 
+         1.25*max(df_prices_temp[,2]))) + 
+  xlim(c(max(df_prices_temp$ref.date) - n_years_back*365,
+         max(df_prices_temp$ref.date) + 2*365) )
+
+p1 
+ggsave('price_simulation.png') #to save p1 ggplot
+```
+For the projections, the mean value is around 30000, and the grey area represents the expected variability for the next years in the index.
+
+
+```{r}
+my_idx_date= first(which(tab_prob$prob > 0.5))
+df_date = tibble(idx = c(first(which(tab_prob$prob > 0.001)),
+                          first(which(tab_prob$prob > 0.5)),
+                          first(which(tab_prob$prob > 0.75)),
+                          first(which(tab_prob$prob > 0.95))),
+                  ref_date = tab_prob$ref_date[idx],
+                  prob = tab_prob$prob[idx],
+                  my_text = paste0(format(ref_date, '%m/%d/%Y'),
+                                   '\nprob = ', scales::percent(prob) ) )
+
+df_textbox = tibble(ref_date = df_date$ref_date[2],
+                     prob = 0.25,
+                     label = paste0('According to the estimated _', my_garch_name, '_ model, ', 
+                                    'the chances of asset **', series_name, '** to reach ',
+                                    'its historical peak value of ', 
+                        format(max(df_prices_temp[,2]), 
+                                           big.mark = ',',
+                                           decimal.mark = '.'),
+                                    ' are higher than 50% at ', format(ref_date, '%m/%d/%Y'), '.') )
+
+```
+
+
+```{r}
+p2= ggplot(tab_prob, aes(x = ref_date, y = prob) ) + 
+  geom_line(size = 2) + 
+  labs(title = paste0('Probabilities of ', 
+                      series_name, ' Reaching its Historical Peak'),
+       subtitle = paste0('Calculations based on simulations of ',
+                         my_garch_name, 
+                         ' model'),
+       x = '',
+       y = 'Probability') + 
+  scale_y_continuous(labels = scales::percent) + 
+  geom_point(data = df_date,
+             aes(x = ref_date, y = prob), size = 5, color = 'red') + 
+  geom_text(data = df_date, aes(x = ref_date, y = prob, 
+                                label = my_text), 
+            nudge_x = nrow(tab_prob)*0.085,
+            nudge_y = -0.05,
+            color ='red', check_overlap = TRUE) + 
+  geom_textbox(data = df_textbox, 
+               mapping = aes(x = ref_date, 
+                             y = prob, 
+                             label = label),
+               width = unit(0.5, "npc"),
+               hjust = 0)
+
+p2
+```
+
+```{r}
+ggsave('probabilities.png') #to save p2 ggplot
+
+```
+
+From the forecasting plot, it is seen that the chances of the index to reach its historical peak value, which is 30467.75, will be higher than $50\%$ on May, 2021, reaching up to a $75\%$ probability in 2023. The increase in the probability follows a logarithm path, so that from February, 28th, 2021 to May, 2021 there is a $50\%$ increase in the probability, however, from there to 2023, the increase is only a $25\%$.
