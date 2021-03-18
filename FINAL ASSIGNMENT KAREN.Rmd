@@ -1,0 +1,687 @@
+---
+title: "Final Assignment Karen"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+ setwd("~/5 MASTER BIG DATA ANALYTICS/2A Time series analysis and forecasting/KAREN LAB 3 ASSIGNMENT")
+#setwd("/home/antonio/Documents/A_master-BDA/Q3/time_series/assignment-final2/")
+#install.packages("rmgarch")
+#install.packgaes("quantmod")
+#install.packages("moments")
+library(moments)
+library(quantmod) 
+library(rmgarch)
+library(rugarch)
+library(parallel)
+library(FinTS)
+library(tidyverse)
+```
+
+```{r}
+# Load IBEX index.
+getSymbols("^IBEX", src = "yahoo", 
+           from = "2000-01-01", to = "2021-03-16", periodicity = "daily")
+IBEX <- IBEX[,6] # column 6 corresponds to "Adj Close"
+NAs.IBEX <- which(is.na(IBEX)) # Find where NAs are.
+no.NAs.IBEX <- which(!(is.na(IBEX))) # ! means logical not: find where no NAs.
+
+# Load DJI index.
+getSymbols("^DJI", src = "yahoo", 
+           from = "2000-01-01", to = "2021-03-16", periodicity = "daily")
+DJI <- DJI[,6]
+NAs.DJI <- which(is.na(DJI))
+no.NAs.DJI <- which(!(is.na(DJI)))
+```
+
+```{r}
+################################################################################
+# Cointegration analysis.
+################################################################################
+
+# Intersection of non-NAs of IBEX and DJI
+no.NAs.common <- intersect(no.NAs.IBEX, no.NAs.DJI)
+
+# Cointegration requires I(1) time series (I(1) = 1 diff to stationarity).
+data0 <- as.matrix(cbind(log(IBEX[no.NAs.common]),
+                       log(DJI[no.NAs.common])))
+
+data0 <- na.omit(data0)
+
+# plot(data0[,1], data0[,2], xlab("Log of IBEX"),
+#      ylab("Log of DJI")) # Clearly non-linear.
+
+coint <- lm(data0[,2] ~ data0[,1])
+summary(coint)
+z_hat <-as.vector(coint$residuals) # Residuals
+plot(z_hat, type="l") # Non stationary residuals
+```
+
+```{r}
+IBEX <- na.omit(IBEX)
+DJI <- na.omit(DJI)
+
+# Not needed, we plot them again with returns and sq returns.
+# par(mfrow=c(2,1))
+# 
+# plot(IBEX)
+# abline(v=(0:12)*260,col=4,lty=3)
+# text((0:11)*260+130,max(IBEX)*0.9,2000+(0:12),cex=0.8)
+# 
+# plot(DJI)
+# abline(v=(0:12)*260,col=4,lty=3)
+# text((0:11)*260+130,max(DJI)*0.9,2000+(0:12),cex=0.8)
+```
+
+
+```{r}
+################################################################################
+# Compute mean, standard deviation, kurtosis and skewness of data.
+################################################################################
+
+fun=function(data){
+  stats=c(mean(data), sd(data), min(data), 
+          max(data), skewness(data), kurtosis(data))
+  out=matrix(stats, ncol=length(stats), nrow=1)
+  colnames(out)=c("mean", "sd dev", "min", "max", "skewness", "kurtosis")
+  return(out)
+}
+
+fun(IBEX)
+fun(DJI)
+```
+
+
+```{r}
+################################################################################
+# Compute returns and squared returns.
+################################################################################
+
+# Compute the returns of IBEX
+x <- diff(log(IBEX))
+x <- na.omit(x)
+x <- x[-1]
+# Computing the squared returns
+x2 <- x^2 
+# Plotting the series, its returns and the squared returns
+par(mfrow = c(3,1), mar = c(2,2,1,1))
+plot(IBEX)
+abline(v = (0:12)*260, col = 4, lty = 3)
+text((0:11)*260+130, max(IBEX)*0.9, 2000+(0:12), cex = 0.8)
+plot(x, main = "Returns")
+abline(v = (0:11)*260, col = 4, lty = 3)
+plot(x2, main = "Squared Returns")
+abline(v=(0:11)*260, col = 4, lty = 3)
+
+# Computing the returns of DJI
+y <- diff(log(DJI))
+y <- na.omit(y)
+y <- y[-1]
+# Computing the squared returns
+y2 <- y^2 
+# Plotting the series, its returns and the squared returns
+par(mfrow = c(3,1), mar = c(2,2,1,1))
+plot(DJI)
+abline(v=(0:12)*260, col = 4, lty = 3)
+text((0:11)*260+130, max(DJI)*0.9,2000+(0:12), cex = 0.8)
+plot(y, main = "Returns")
+abline(v=(0:11)*260,col=4,lty=3)
+plot(y2, main = "Squared Returns")
+abline(v=(0:11)*260,col=4,lty=3)
+```
+
+```{r}
+################################################################################
+# Unit root test for stationarity
+################################################################################
+
+library(urca)
+summary(ur.df(x, lags = 6, type = "none", selectlags = "AIC"))
+summary(ur.df(y, lags = 6, type = "none", selectlags = "AIC"))
+```
+
+```{r}
+################################################################################
+# Merge both returns 
+################################################################################
+data1 <- as.matrix(cbind(x,y))
+data1 <- na.omit(data1)
+```
+
+```{r}
+################################################################################
+# ACF and PACF of the returns
+################################################################################
+par(mfrow = c(2,2), mar = c(4,4,1,1))
+
+plot(acf(data1[,1], lag.max = 60, plot = FALSE)[1:60], # Avoid first ACF
+     xlab = "Lag (days)", ylab = "ACF for returns of IBEX", main = "")
+pacf(data1[,1], lag.max = 60, xlab = "Lag (days)", 
+     ylab = "PACF for returns of IBEX", main = "")
+
+plot(acf(data1[,2], lag.max = 60, plot = FALSE)[1:60],
+     xlab = "Lag (days)", ylab = "ACF for returns of DJI", main = "")
+pacf(data1[,2], lag.max = 60, xlab = "Lag (days)", 
+     ylab = "PACF for returns of DJI", main = "")
+```
+
+```{r}
+################################################################################
+# Find the best ARMA model
+################################################################################
+#install.packages("forecast")
+library(forecast)
+
+mod1.ARMA <- auto.arima(data1[,1], d = 0) # Force d=0 (already stationary).
+summary(mod1.ARMA)
+
+mod2.ARMA <- auto.arima(data1[,2], d = 0)
+summary(mod2.ARMA)
+```
+
+
+
+```{r}
+################################################################################
+# Validation of the ARMA models
+################################################################################
+
+# White noise test for returns of IBEX
+tsdiag(mod1.ARMA, 
+       gof.lag=sqrt(length(mod1.ARMA$residuals)))# 
+Box.test(mod1.ARMA$residuals, type='Ljung', 
+         lag=sqrt(length(mod1.ARMA$residuals)))
+
+# White noise test for returns of DJII
+tsdiag(mod2.ARMA,
+       gof.lag=sqrt(length(mod2.ARMA$residuals)))# 
+Box.test(mod2.ARMA$residuals, type='Ljung', 
+         lag=sqrt(length(mod2.ARMA$residuals)))
+```
+
+```{r}
+################################################################################
+# Test for univariate ARCH effects.
+################################################################################
+
+library(FinTS)
+library(tidyverse)
+source("arch_test.R")
+
+# ARCH effects on IBEX.
+arch_x <- arch_test(x, max_lag = 5)
+arch_x
+# write.table(arch_dj, file = "x_arch.csv", # Uncomment to export outputs.
+#             sep = ";", row.names = FALSE)
+
+# Similar results for other ARMA models. Uncomment to verify it.
+for (i in 0:4) {
+  for (j in 0:1) {
+    print(arch_test(residuals(arima(x, order = c(i,0,j))), max_lag = 5))
+  }
+}
+
+# ARCH effects on DJI.
+arch_y <- arch_test(x, max_lag = 5)
+arch_y
+# write.table(arch_dj, file = "y_arch.csv", # Uncomment to export outputs.
+#             sep = ";", row.names = FALSE)
+
+# Similar results for other ARMA models. Uncomment to verify it.
+for (i in 0:2) {
+  for (j in 0:4) {
+    print(arch_test(residuals(arima(y, order = c(i,0,j))), max_lag = 5))
+  }
+}
+```
+
+```{r}
+################################################################################
+# Find the best GARCH specification for IBEX.
+################################################################################
+
+library(texreg)
+library(rugarch)
+library(purrr)
+source('garch_functs.R')
+source('estimate_garch.R')
+
+min_lag_AR <- 0
+max_lag_AR <- 3
+min_lag_MA <- 0
+max_lag_MA <- 1
+max_lag_ARCH <- 2
+max_lag_GARCH <- 1
+# dist_to_use <- c('norm', 'std')
+dist_to_use <- c('std') # Use only std to improve performance (generally better)
+# models_to_estimate <- c('sGARCH','eGARCH', 'gjrGARCH')
+models_to_estimate <- c('eGARCH', 'gjrGARCH') # Do not use sGARCH (worse)
+
+mods.x <- find_best_arch_model(x = x, 
+                           type_models = models_to_estimate,
+                           dist_to_use = dist_to_use,
+                           min_lag_AR = min_lag_AR,
+                           max_lag_AR = max_lag_AR,
+                           min_lag_MA = min_lag_MA,
+                           max_lag_MA = max_lag_MA,
+                           max_lag_ARCH = max_lag_ARCH,
+                           max_lag_GARCH = max_lag_GARCH)
+```
+
+```{r}
+tab_out.x <- mods.x$tab_out
+# Modify tab_out (better for plotting)
+df_long.x <- tidyr::pivot_longer(data = tab_out.x %>%
+                                dplyr::select(model_name,
+                                       type_model,
+                                       type_dist,
+                                       AIC, BIC),  cols = c('AIC', 'BIC'))
+# Get model names.
+models_names.x <- unique(df_long.x$model_name)
+
+# Find best models (lowest BIC and AIC).
+best_models.x <- c(tab_out.x$model_name[which.min(tab_out.x$AIC)],
+                tab_out.x$model_name[which.min(tab_out.x$BIC)])
+# Add column of whether the model is the best or not.
+df_long.x <- df_long.x %>%
+  mutate(order_model = if_else(model_name %in% best_models.x, 
+                               'Best Model', 'Not Best Model') ) %>% na.omit()
+# Make df with best models.
+df_best_models.x <- df_long.x %>%
+  group_by(name) %>%
+  summarise(model_name = model_name[which.min(value)],
+            value = value[which.min(value)],
+            type_model = type_model[which.min(value)])
+
+# Plot all candidate models with std distribution.
+ggplot(df_long.x %>% filter(type_dist == "std") %>% arrange(type_model), 
+       aes(x = reorder(model_name, order(type_model)),
+           y = value, shape = type_dist, color = type_model)) + 
+  geom_point(size = 3.5, alpha = 0.65) + 
+  coord_flip()  + 
+  facet_wrap(~name, scales = 'free_x') + 
+  geom_point(data = df_best_models.x, 
+             mapping = aes(x = reorder(model_name, order(type_model)),y = value), 
+             color = 'blue', size = 5, shape = 8) +
+  labs(#title = 'Selecting Garch Models by Fitness Criteria',
+       #subtitle = 'The best model is the one with lowest AIC or BIC (with star)',
+       x = '',
+       y = 'Value of Fitness Criteria',
+       shape = 'Type of Dist.',
+       color = 'Type of Model') + 
+  theme(legend.position = "right")
+
+# Estimate best garch model by BIC (used in next section).
+best_spec_bic.x <- ugarchspec(variance.model = 
+                              list(model = mods.x$best_bic$type_model, 
+                                   garchOrder = c(mods.x$best_bic$lag_arch,
+                                                  mods.x$best_bic$lag_garch)),
+                            mean.model = list(armaOrder = c(mods.x$best_bic$lag_ar, 
+                                                            mods.x$best_bic$lag_ma)),
+                       distribution = 'std')
+my_best_garch_bic.x <- ugarchfit(spec = best_spec_bic.x, data = x)
+my_best_garch_bic.x
+
+# Estimate best garch model by AIC.
+best_spec_AIC.x <- ugarchspec(variance.model = 
+                              list(model = mods.x$best_aic$type_model, 
+                                   garchOrder = c(mods.x$best_aic$lag_arch,
+                                                  mods.x$best_aic$lag_garch)),
+                            mean.model = list(armaOrder = c(mods.x$best_aic$lag_ar, 
+                                                            mods.x$best_aic$lag_ma)),
+                            distribution = 'std')
+my_best_garch_AIC.x <- ugarchfit(spec = best_spec_AIC.x, data = x)
+my_best_garch_AIC.x
+
+# Compute ARMA(0,0) + sGARCH(2,1) std model for testing asymmetry.
+aic_spect_test.x <- ugarchspec(variance.model = 
+                              list(model = "sGARCH", garchOrder = c(2, 1)), 
+                            mean.model = list(armaOrder = c(0, 0)), 
+                            distribution.model = "std")
+aic_spect_test_fit.x <- ugarchfit(spec = aic_spect_test.x, data = x)
+aic_spect_test_fit.x # Indeed there is asymmetry!
+```
+
+
+```{r}
+################################################################################
+# Find the best GARCH specification for DJI.
+################################################################################
+
+library(texreg)
+library(rugarch)
+library(purrr)
+source('garch_functs.R')
+source('estimate_garch.R')
+
+min_lag_AR <- 0
+max_lag_AR <- 2
+min_lag_MA <- 0
+max_lag_MA <- 4
+max_lag_ARCH <- 2
+max_lag_GARCH <- 1
+# dist_to_use <- c('norm', 'std')
+dist_to_use <- c('std') # Use only std to improve performance (generally better)
+# models_to_estimate <- c('sGARCH','eGARCH', 'gjrGARCH')
+models_to_estimate <- c('eGARCH', 'gjrGARCH') # Do not use sGARCH (worse)
+
+mods.y <- find_best_arch_model(x = y, 
+                           type_models = models_to_estimate,
+                           dist_to_use = dist_to_use,
+                           min_lag_AR = min_lag_AR,
+                           max_lag_AR = max_lag_AR,
+                           min_lag_MA = min_lag_MA,
+                           max_lag_MA = max_lag_MA,
+                           max_lag_ARCH = max_lag_ARCH,
+                           max_lag_GARCH = max_lag_GARCH)
+```
+
+```{r}
+tab_out.y <- mods.y$tab_out
+# Modify tab_out (better for plotting)
+df_long.y <- tidyr::pivot_longer(data = tab_out.y %>%
+                                dplyr::select(model_name,
+                                       type_model,
+                                       type_dist,
+                                       AIC, BIC),  cols = c('AIC', 'BIC'))
+# Get model names.
+models_names.y <- unique(df_long.y$model_name)
+
+# Find best models (lowest BIC and AIC).
+best_models.y <- c(tab_out.y$model_name[which.min(tab_out.y$AIC)],
+                tab_out.y$model_name[which.min(tab_out.y$BIC)])
+# Add column of whether the model is the best or not.
+df_long.y <- df_long.y %>%
+  mutate(order_model = if_else(model_name %in% best_models.y, 
+                               'Best Model', 'Not Best Model') ) %>% na.omit()
+# Make df with best models.
+df_best_models.y <- df_long.y %>%
+  group_by(name) %>%
+  summarise(model_name = model_name[which.min(value)],
+            value = value[which.min(value)],
+            type_model = type_model[which.min(value)])
+
+# Plot all candidate models with std distribution.
+ggplot(df_long.y %>% filter(type_dist == "std") %>% arrange(type_model), 
+       aes(x = reorder(model_name, order(type_model)),
+           y = value, shape = type_dist, color = type_model)) + 
+  geom_point(size = 3.5, alpha = 0.65) + 
+  coord_flip()  + 
+  facet_wrap(~name, scales = 'free_x') + 
+  geom_point(data = df_best_models.y, 
+             mapping = aes(x = reorder(model_name, order(type_model)),y = value), 
+             color = 'blue', size = 5, shape = 8) +
+  labs(#title = 'Selecting Garch Models by Fitness Criteria',
+       #subtitle = 'The best model is the one with lowest AIC or BIC (with star)',
+       x = '',
+       y = 'Value of Fitness Criteria',
+       shape = 'Type of Dist.',
+       color = 'Type of Model') + 
+  theme(legend.position = "right")
+
+# Estimate best garch model by BIC (used in next section).
+best_spec_bic.y <- ugarchspec(variance.model = 
+                              list(model = mods.y$best_bic$type_model, 
+                                   garchOrder = c(mods.y$best_bic$lag_arch,
+                                                  mods.y$best_bic$lag_garch)),
+                            mean.model = list(armaOrder = c(mods.y$best_bic$lag_ar, 
+                                                            mods.y$best_bic$lag_ma)),
+                       distribution = 'std')
+my_best_garch_bic.y <- ugarchfit(spec = best_spec_bic.y, data = y)
+my_best_garch_bic.y
+
+# Estimate best garch model by AIC.
+best_spec_AIC.y <- ugarchspec(variance.model = 
+                              list(model = mods.y$best_aic$type_model, 
+                                   garchOrder = c(mods.y$best_aic$lag_arch,
+                                                  mods.y$best_aic$lag_garch)),
+                            mean.model = list(armaOrder = c(mods.y$best_aic$lag_ar, 
+                                                            mods.y$best_aic$lag_ma)),
+                            distribution = 'std')
+my_best_garch_AIC.y <- ugarchfit(spec = best_spec_AIC.y, data = y)
+my_best_garch_AIC.y
+
+# Compute ARMA(0,1) + sGARCH(2,1) std model for testing asymmetry.
+aic_spect_test.y <- ugarchspec(variance.model = 
+                              list(model = "sGARCH", garchOrder = c(2, 1)), 
+                            mean.model = list(armaOrder = c(0, 1)), 
+                            distribution.model = "std")
+aic_spect_test_fit.y <- ugarchfit(spec = aic_spect_test.y, data = y)
+aic_spect_test_fit.y # Indeed there is asymmetry!
+
+```
+
+
+```{r}
+################################################################################
+# Select the order of the VAR model
+################################################################################
+#install.packages("vars")
+library(vars)
+info.var <- VARselect(data1, lag.max = 12, type = "const")
+info.var$selection # Select the value for p according to info criteria.
+```
+
+```{r}
+bv.est <- VAR(data1, p = 1, type = "const", season = NULL, 
+              exog = NULL)
+summary(bv.est)
+
+bv.cause.IBEX <- causality(bv.est, cause = "IBEX.Adjusted")
+bv.cause.IBEX
+
+bv.cause.DJI <- causality(bv.est, cause = "DJI.Adjusted")
+bv.cause.DJI
+```
+
+
+```{r}
+################################################################################
+# Residual Analysis
+################################################################################
+bv.serial <- serial.test(bv.est, lags.pt = 12, type = "PT.asymptotic")
+plot(bv.serial, names = "IBEX.Adjusted")
+plot(bv.serial, names = "DJI.Adjusted")
+```
+
+
+```{r}
+################################################################################
+# Test for multivariate ARCH effects.
+################################################################################
+
+bv.arch <- arch.test(bv.est, lags.multi = 12, multivariate.only = TRUE)
+bv.arch # Since the p-value is lower than 0.05, there are arch effects. 
+```
+
+```{r}
+#####################################################
+# Finding the best volatility model for each series #
+#####################################################
+# IBEX best model for variance ARMA(0,0)+eGARCH(2,1)
+# DJI  best model for variance ARMA(0,1)+eGARCH(2,1)
+library(purrr)
+library(texreg)
+library(rugarch)
+source('garch_functs.R')
+source('estimate_garch.R')
+min_lag_AR = 0
+max_lag_AR = 0 # 
+min_lag_MA = 0
+max_lag_MA = 1 # 
+max_lag_ARCH = 2 # 
+max_lag_GARCH = 1 # 
+dist_to_use = c('norm', 'std') # see rugarch::ugarchspec help for more
+models_to_estimate = c('sGARCH', 'eGARCH', 'gjrGARCH') # see rugarch::rugarchspec help for more
+```
+
+```{r}
+# replace first x and then by y
+out = find_best_arch_model(x = x, 
+                           type_models = models_to_estimate,
+                           dist_to_use = dist_to_use,
+                           min_lag_AR = min_lag_AR,
+                           max_lag_AR = max_lag_AR,
+                           min_lag_MA = min_lag_MA,
+                           max_lag_MA = max_lag_MA,
+                           max_lag_ARCH = max_lag_ARCH,
+                           max_lag_GARCH = max_lag_GARCH)
+tab_out = out$tab_out
+```
+
+```{r}
+# pivot table to long format (better for plotting)
+df_long = tidyr::pivot_longer(data = tab_out %>%
+                                dplyr::select(model_name,
+                                       type_model,
+                                       type_dist,
+                                       AIC, BIC),  
+                              cols = c('AIC', 'BIC'))
+
+models_names = unique(df_long$model_name)
+best_models = c(tab_out$model_name[which.min(tab_out$AIC)],
+                tab_out$model_name[which.min(tab_out$BIC)])
+
+# figure out where is the best model
+df_long = df_long %>%
+  mutate(order_model = if_else(model_name %in% best_models, 
+                               'Best Model', 'Not Best Model') ) %>%na.omit()
+
+# make table with best models
+df_best_models = df_long %>%
+  group_by(name) %>%
+  summarise(model_name = model_name[which.min(value)],
+            value = value[which.min(value)],
+            type_model = type_model[which.min(value)])
+
+# plot results
+ggplot(df_long %>%arrange(type_model), 
+       aes(x = reorder(model_name, order(type_model)),
+           y = value, shape = type_dist, color = type_model)) + 
+  geom_point(size = 3.5, alpha = 0.65) + 
+  coord_flip()  + 
+  facet_wrap(~name, scales = 'free_x') + 
+  geom_point(data = df_best_models, 
+             mapping = aes(x = reorder(model_name, order(type_model)),y = value), 
+             color = 'blue', size = 5, shape = 8) +
+  labs(title = 'Selecting Garch Models by Fitness Criteria', 
+       subtitle = 'The best model is the one with lowest AIC or BIC (with star)',
+       x = '',
+       y = 'Value of Fitness Criteria',
+       shape = 'Type of Dist.',
+       color = 'Type of Model') + 
+  theme(legend.position = "right")
+
+```
+
+
+```{r}
+# replace first x and then by y
+out = find_best_arch_model(x = y, 
+                           type_models = models_to_estimate,
+                           dist_to_use = dist_to_use,
+                           min_lag_AR = min_lag_AR,
+                           max_lag_AR = max_lag_AR,
+                           min_lag_MA = min_lag_MA,
+                           max_lag_MA = max_lag_MA,
+                           max_lag_ARCH = max_lag_ARCH,
+                           max_lag_GARCH = max_lag_GARCH)
+tab_out = out$tab_out
+```
+
+
+```{r}
+# pivot table to long format (better for plotting)
+df_long = tidyr::pivot_longer(data = tab_out %>%
+                                dplyr::select(model_name,
+                                       type_model,
+                                       type_dist,
+                                       AIC, BIC),  
+                              cols = c('AIC', 'BIC'))
+
+models_names = unique(df_long$model_name)
+best_models = c(tab_out$model_name[which.min(tab_out$AIC)],
+                tab_out$model_name[which.min(tab_out$BIC)])
+
+# figure out where is the best model
+df_long = df_long %>%
+  mutate(order_model = if_else(model_name %in% best_models, 
+                               'Best Model', 'Not Best Model') ) %>%na.omit()
+
+# make table with best models
+df_best_models = df_long %>%
+  group_by(name) %>%
+  summarise(model_name = model_name[which.min(value)],
+            value = value[which.min(value)],
+            type_model = type_model[which.min(value)])
+
+# plot results
+ggplot(df_long %>%arrange(type_model), 
+       aes(x = reorder(model_name, order(type_model)),
+           y = value, shape = type_dist, color = type_model)) + 
+  geom_point(size = 3.5, alpha = 0.65) + 
+  coord_flip()  + 
+  facet_wrap(~name, scales = 'free_x') + 
+  geom_point(data = df_best_models, 
+             mapping = aes(x = reorder(model_name, order(type_model)),y = value), 
+             color = 'blue', size = 5, shape = 8) +
+  labs(title = 'Selecting Garch Models by Fitness Criteria', 
+       subtitle = 'The best model is the one with lowest AIC or BIC (with star)',
+       x = '',
+       y = 'Value of Fitness Criteria',
+       shape = 'Type of Dist.',
+       color = 'Type of Model') + 
+  theme(legend.position = "right")
+
+```
+
+```{r}
+# Estimating a DCC model #
+##########################
+# IBEX best model for variance ARMA(0,0)+eGARCH(2,1)
+# DJI  best model for variance ARMA(0,1)+eGARCH(2,1)
+
+uspec1 <- ugarchspec(  
+  mean.model = list(armaOrder = c(0,0)), 
+  variance.model = list(model = "eGARCH", garchOrder = c(2, 1)), 
+  distribution.model = "std")
+
+uspec2 = ugarchspec(
+  mean.model = list(armaOrder = c(0,1)), 
+  variance.model = list(model = "eGARCH", garchOrder = c(2, 1)), 
+  distribution.model = "std")
+
+uspec = c(uspec1, uspec2)
+
+spec = dccspec(uspec  = multispec( uspec ), 
+               dccOrder = c(1,1), #don't change it
+               distribution = "mvlaplace") 
+
+garchdccfit = dccfit(spec, data1,  fit.control=list(scale=TRUE)) 
+
+garchdccfit
+```
+
+
+```{r warning=FALSE}
+# Estimating a BEKK model #
+###########################
+#install.packages("mgarchBEKK")
+library(mgarchBEKK)
+estimated <- BEKK(data1, order = c(1, 1), method="Nelder-Mead")
+# method = "SANN", method = "L-BFS-B", method= "BFS"
+estimated$est.params # provide you the matrices C, A and B
+estimated$asy.se.coef # st errors asocitated to the coefficients
+#estimated$cor[[1]][[2]]
+#estimated$sd[[1]]
+estimated$uncond.cov.matrix #H matrix
+estimated$aic
+estimated$order
+```
+
+
+
