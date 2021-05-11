@@ -10,7 +10,7 @@
 ## SET PATH
 
 #setwd("~/5 MASTER BIG DATA ANALYTICS/2B Network analysis and data visualization")
-setwd("C:/Users/silvi/Documents/3.-Máster/IV/3.- Network analysis and data visualization/A1")
+setwd("C:/Users/silvi/Documents/3.-MÃ¡ster/IV/3.- Network analysis and data visualization/A1")
 
 
 ## Libraries
