@@ -29,7 +29,7 @@ CP <- Original
 attach(CP)
 
 ####################DATA CLEANING AND DUMMY VARIABLES
-CP$X.ÈÀid <- NULL
+CP$X.ÃˆÃ€id <- NULL
 CP$cd <- ifelse(CP$cd=="yes",1,0)
 CP$multi <- ifelse(CP$multi=="yes",1,0)
 CP$premium <- ifelse(CP$premium=="yes",1,0)
