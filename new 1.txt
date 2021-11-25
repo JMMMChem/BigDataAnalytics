@@ -1,0 +1,69 @@
+GENERAL / WEIGHT
+
+ADEX ON / ADEX ON
+                                     Good pattern  Bad pattern
+G1.SAG.I_Plant_Power                    47.705297    47.779535
+G1.SAG.MEM_MEAN_Fltrd_Power_PV          15.282609    15.307790
+G1.SAG.I_Power_PV                       15.206861    15.245000
+&Weight_Coarse.Ctrl.Pvg1.fVar          547.058094   546.830599
+&G1.SAG.Weight_Speed.Ctrl.Pvg1.fVar    547.184816   547.085291
+G1.SAG.I_Weight                        547.130265   546.874107
+G1.SAG.MEM_Density_PV                   71.089254    71.109052
+G1.SAG.I_Water_Flow                    955.574052   951.984170
+G1.SAG.I_Speed_PV                        8.952711     8.965952
+G1.SAG.I_Conveyor1_Flow               2153.081702  2147.484867
+G1.SAG.Weight.Ctrl.MEM_AI             2278.610312  2273.219136
+G1.SAG.I_Conveyor2_Flow               2305.489521  2299.728543
+G1.SAG.I_Output_Flow                  2611.019759  2607.189590
+G1.SAG.Return.I_Buffer1_Level           81.250475    81.247218
+G1.SAG.I_Stockpile_Level                96.712789    96.723858
+G1.SAG.I_Stockpile_Fine_Flow          1538.801555  1543.009894
+G1.SAG.KPI.MEM_SAG_SC                    7.068769     7.108944
+G1.SAG.KPI.MEM_Plant_SC                 22.177508    22.283360
+
+ADEX ON / ADEX OFF
+
+                                     Good pattern  Bad pattern
+G1.SAG.I_Plant_Power                    47.533028    47.005648
+G1.SAG.MEM_MEAN_Fltrd_Power_PV          15.733837    15.527692
+G1.SAG.I_Power_PV                       15.683969    15.478749
+&Weight_Coarse.Ctrl.Pvg1.fVar          540.437620   542.328671
+&G1.SAG.Weight_Speed.Ctrl.Pvg1.fVar    540.467995   542.335340
+G1.SAG.I_Weight                        540.591600   542.340901
+G1.SAG.MEM_Density_PV                   70.607135    70.090058
+G1.SAG.I_Water_Flow                    958.652071  1003.615878
+G1.SAG.I_Speed_PV                        9.164199     9.032998
+G1.SAG.I_Conveyor1_Flow               2098.889911  2144.657248
+G1.SAG.Weight.Ctrl.MEM_AI             2231.947698  2278.805010
+G1.SAG.I_Conveyor2_Flow               2305.699640  2312.662251
+G1.SAG.I_Output_Flow                  2562.351463  2578.524031
+G1.SAG.Return.I_Buffer1_Level           81.908933    81.950493
+G1.SAG.KPI.MEM_SAG_SC                    7.472694          NaN
+G1.SAG.KPI.MEM_Plant_SC                 22.648260    22.037759
+G1.SAG.I_Stockpile_Level                      NaN    88.693053
+
+ADEX OFF / ADEX OFF
+
+                                     Good pattern  Bad pattern
+G1.SAG.I_Plant_Power                    49.405065    48.695561
+G1.SAG.MEM_MEAN_Fltrd_Power_PV          15.785615    15.860966
+G1.SAG.I_Power_PV                       15.723871    15.805028
+&Weight_Coarse.Ctrl.Pvg1.fVar          546.014499   550.959324
+&G1.SAG.Weight_Speed.Ctrl.Pvg1.fVar    546.459095   551.014828
+G1.SAG.I_Weight                        545.381738   550.773476
+G1.SAG.MEM_Density_PV                   72.708051    70.302164
+G1.SAG.I_Water_Flow                    820.415169   842.641864
+G1.SAG.I_Speed_PV                        9.194839     9.100404
+&Weight_Pebbles.Ctrl.Pvg1.fVar         105.730487          NaN
+G1.SAG.I_Conveyor1_Flow               2046.356213  1878.048389
+G1.SAG.Weight.Ctrl.MEM_AI             2169.543433  1997.596351
+G1.SAG.I_Conveyor2_Flow               2179.817422  1849.338021
+G1.SAG.I_Output_Flow                  2378.042788  2434.710185
+G1.SAG.Return.I_Buffer1_Level           81.145456    81.160783
+G1.SAG.Return.I_Buffer2_Level           25.605772          NaN
+G1.SAG.I_Stockpile_Level                95.200492    93.317049
+G1.SAG.I_Stockpile_Fine_Flow          1914.583216  1969.749816
+G1.SAG.MEM_Calc_Granulometry_2           0.152290     0.169853
+G1.SAG.MEM_Calc_Granulometry_3           0.065604          NaN
+G1.SAG.KPI.MEM_SAG_SC                    7.683275     8.426142
+G1.SAG.KPI.MEM_Plant_SC                 24.143127    25.957317
